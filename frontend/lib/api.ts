@@ -39,6 +39,8 @@ export type AnswerReveal = {
   explanation: string;
   knowledge: string;
   source_paragraph: number | null;
+  /** 这道题在正文里的原句依据（逐字引用），用于「回看原文」定位。 */
+  evidence?: string | null;
 };
 
 export type QuizState = { answered: (AnswerReveal | null)[]; finished: boolean };

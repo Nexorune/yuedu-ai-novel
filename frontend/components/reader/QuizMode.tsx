@@ -162,6 +162,9 @@ export function QuizMode({ chapter, label, answered, result, onAnswer, onClose, 
                     {(reveal.explanation || reveal.knowledge) && (
                       <p>{reveal.explanation || "这道题考的是：" + reveal.knowledge}</p>
                     )}
+                    {reveal.evidence && (
+                      <p className="qm-evidence"><span>原文依据</span>「{reveal.evidence}」</p>
+                    )}
                     {!reveal.correct && (
                       <button type="button" className="qm-link" onClick={() => onLookBack(reveal)}><BookOpenText size={15} />回看原文</button>
                     )}

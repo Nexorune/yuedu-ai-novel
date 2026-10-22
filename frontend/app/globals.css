@@ -519,6 +519,8 @@ html[data-reading-theme="night"]:has(.reader-shell) { color-scheme: dark; }
 html[data-reading-theme="night"] .is-right .qm-feedback strong { color: var(--r-right); }
 html[data-reading-theme="night"] .is-wrong .qm-feedback strong { color: var(--r-wrong); }
 .qm-feedback p { margin-top: 4px; color: var(--r-text); font-size: 14px; line-height: 1.7; }
+.qm-feedback .qm-evidence { margin-top: 6px; padding-left: 10px; border-left: 2px solid currentColor; color: var(--r-muted); font-size: 13px; line-height: 1.65; }
+.qm-feedback .qm-evidence span { display: inline-block; margin-right: 6px; font-size: 12px; letter-spacing: 0.06em; opacity: 0.75; }
 .qm-cta { min-width: 136px; min-height: 52px; padding: 0 26px; border-radius: 14px; background: var(--r-accent); color: #fff; font-size: 16px; font-weight: 700; letter-spacing: .08em; box-shadow: 0 4px 0 var(--r-accent-dark); transition: transform .08s ease, box-shadow .08s ease; }
 html[data-reading-theme="night"] .qm-cta { box-shadow: 0 4px 0 #2e4434; }
 .is-right .qm-cta { background: var(--r-right); box-shadow: 0 4px 0 var(--r-right-dark); }

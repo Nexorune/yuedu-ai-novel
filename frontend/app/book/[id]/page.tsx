@@ -6,7 +6,7 @@ import { useParams, useSearchParams } from "next/navigation";
 import { ALargeSmall, ArrowLeft, ArrowRight, BookOpen, CircleAlert, CircleCheck, Flag, Images, List, RotateCcw, Sparkles, Swords, X } from "lucide-react";
 import { api, AnswerResult, AnswerReveal, AppError, Book, Chapter, errorMessage, Progress, Recap, Task } from "@/lib/api";
 import { ActiveTask, clearTask, loadTask, saveTask, taskState } from "@/lib/task";
-import { chapterTitle, countChars, findParagraph, knowledgeTerms, parseChapter, readingMinutes } from "@/lib/chapter";
+import { chapterTitle, countChars, findParagraph, findQuoteParagraph, knowledgeTerms, parseChapter, readingMinutes } from "@/lib/chapter";
 import { loadPosition, loadReadingSize, loadReadingTheme, READING_SIZES, ReadingSize, ReadingTheme, saveLastBook, savePosition, saveReadingSize, saveReadingTheme, stepReadingSize } from "@/lib/prefs";
 import { KnowledgeCards } from "@/components/reader/KnowledgeCards";
 import { QuizMode } from "@/components/reader/QuizMode";
@@ -376,6 +376,7 @@ export default function ReadingPage() {
     const reveal: AnswerReveal = {
       index: feedback.index, choice: feedback.choice, correct: feedback.correct, answer: feedback.answer,
       explanation: feedback.explanation, knowledge: feedback.knowledge, source_paragraph: feedback.source_paragraph,
+      evidence: feedback.evidence,
     };
     const finished = feedback.result;
     setChapter((old) => {
@@ -398,8 +399,10 @@ export default function ReadingPage() {
   }, [bookId, chapter]);
 
   function lookBack(reveal: AnswerReveal) {
-    let target = reveal.knowledge ? findParagraph(paragraphs, knowledgeTerms(reveal.knowledge)) : -1;
+    // 优先用题目交出的原句逐字定位（后端已校验），其次用段号，最后才靠关键词猜
+    let target = reveal.evidence ? findQuoteParagraph(paragraphs, reveal.evidence) : -1;
     if (target < 0 && reveal.source_paragraph) target = paragraphs.findIndex((paragraph) => paragraph.no === reveal.source_paragraph);
+    if (target < 0 && reveal.knowledge) target = findParagraph(paragraphs, knowledgeTerms(reveal.knowledge));
     const index = Math.max(0, target);
     setQuizOpen(false);
     setReturnToQuiz(true);

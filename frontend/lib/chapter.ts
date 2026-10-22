@@ -86,6 +86,20 @@ export function knowledgeTerms(point: string): string[] {
   return title.split(/[（）()、/，,\s]+/).map((term) => term.trim()).filter((term) => term.length >= 2);
 }
 
+const STRIP = /[\s\u3000，。、；：！？…—－·“”‘’（）《》〈〉「」『』,.;:!?()\[\]<>/\\|*#"'"]+/g;
+
+/** 去掉空白与标点后比较，容忍模型抄写时的标点差异。 */
+export function normalizeText(text: string): string {
+  return text.replace(STRIP, "").toLowerCase();
+}
+
+/** 按题目交出的「原文依据」逐字定位段落；找不到返回 -1。 */
+export function findQuoteParagraph(paragraphs: Paragraph[], quote: string): number {
+  const target = normalizeText(quote ?? "");
+  if (target.length < 8) return -1;
+  return paragraphs.findIndex((paragraph) => normalizeText(paragraph.lines.join("")).includes(target));
+}
+
 /** 返回正文里第一次讲到这些关键词的段落序号；找不到返回 -1。 */
 export function findParagraph(paragraphs: Paragraph[], terms: string[]): number {
   if (terms.length === 0) return -1;

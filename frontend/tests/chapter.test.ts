@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { chapterTitle, countChars, optionLabels, parseChapter, parseEnding, parseHint, readingMinutes } from "../lib/chapter";
+import { chapterTitle, countChars, findQuoteParagraph, optionLabels, parseChapter, parseEnding, parseHint, readingMinutes } from "../lib/chapter";
 import { loadLastBook, loadReadingSize, nextReadingSize, saveLastBook, saveReadingSize } from "../lib/prefs";
 
 describe("chapter display parsing", () => {
@@ -71,6 +71,15 @@ describe("knowledge cards", () => {
     const paragraphs = parse("第1段\n开头。\n第2段\n他想起了检索增强生成。\n第3段\n结尾。");
     expect(findParagraph(paragraphs, knowledgeTerms(point))).toBe(1);
     expect(findParagraph(paragraphs, ["不存在"])).toBe(-1);
+  });
+
+  it("locates a paragraph by the exact quote the question cites", () => {
+    const paragraphs = parseChapter("第1段\n开头。\n第2段\n复利是利息也生利息，时间越长差距越大。\n第3段\n结尾。");
+    // 标点、引号、空白与原文不一致也认
+    expect(findQuoteParagraph(paragraphs, "“复利是利息也生利息 时间越长，差距越大”")).toBe(1);
+    expect(findQuoteParagraph(paragraphs, "复利是把利息也当本金")).toBe(-1);
+    // 太短的引用不足以定位，避免误落到别的段落
+    expect(findQuoteParagraph(paragraphs, "复利")).toBe(-1);
   });
 
   it("remembers reading theme and position per book", async () => {
