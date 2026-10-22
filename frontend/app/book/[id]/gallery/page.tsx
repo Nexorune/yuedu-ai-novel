@@ -86,7 +86,7 @@ export default function GalleryPage() {
 
   return (
     <div className="site-shell">
-      <SiteHeader user={user} ready={ready} nav={[{ href: "/create#books", label: "学习记录" }, { href: "/book/" + bookId, label: "继续阅读" }]} />
+      <SiteHeader user={user} ready={ready} nav={[{ href: "/library", label: "学习记录" }, { href: "/book/" + bookId, label: "继续阅读" }]} />
       <main className="reading-main">
         <Link className="back-link" href={"/book/" + bookId}><ArrowLeft size={16} /> 返回阅读</Link>
         <div className="reading-heading"><span className="eyebrow">ENDING GALLERY</span><h1>结局画廊</h1><p>同一个故事，也许有不止一种后来。重走结局会调用模型并产生用量费用。</p></div>

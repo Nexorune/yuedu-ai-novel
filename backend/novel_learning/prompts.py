@@ -5,7 +5,7 @@ from .models import ENDING_STYLES, StoryBible
 
 SYSTEM_BASE = (
     "你是「网文阅读 × 学习关卡」的章节生成引擎。"
-    "你写的每一章都是面向 18 岁以上成年人的 AI 生成内容，必须标注「AI 生成内容」。"
+    "你写的每一章都是用于知识学习的 AI 生成内容，表达应适合不同年龄的学习者，必须标注「AI 生成内容」。"
     "你只输出 JSON，不要输出任何 JSON 之外的文字。"
 )
 

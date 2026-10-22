@@ -57,6 +57,8 @@ def test_require_adult_yes(monkeypatch):
     assert security.require_adult() is True
 
 
-def test_require_adult_no(monkeypatch):
-    monkeypatch.setattr("builtins.input", lambda *a: "n")
-    assert security.require_adult() is False
+def test_legacy_age_check_never_prompts(monkeypatch):
+    def unexpected_prompt(*args):
+        raise AssertionError("学习产品不应询问年龄")
+    monkeypatch.setattr("builtins.input", unexpected_prompt)
+    assert security.require_adult() is True

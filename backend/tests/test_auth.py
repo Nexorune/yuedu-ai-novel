@@ -5,8 +5,7 @@ from conftest import TEST_PHONE, login
 
 
 def _body(phone, **kw):
-    return {"phone": phone, "code": config.DEMO_LOGIN_CODE, "agreed": True,
-            "adult_confirmed": True, **kw}
+    return {"phone": phone, "code": config.DEMO_LOGIN_CODE, "agreed": True, **kw}
 
 
 def test_send_code_checks_phone_format(anon_client):
@@ -15,13 +14,32 @@ def test_send_code_checks_phone_format(anon_client):
     assert bad.status_code == 400 and bad.json()["error"]["code"] == "INVALID_PHONE"
 
 
+def test_demo_autofill_is_explicit_and_never_cached(anon_client, monkeypatch):
+    monkeypatch.setattr(config, "DEMO_LOGIN_AUTOFILL", True)
+    monkeypatch.setattr(config, "DEMO_LOGIN_CODE", "123456")
+    assert anon_client.get("/api/auth/me").json()["demo_autofill"] is True
+    response = anon_client.post("/api/auth/code", json={"phone": TEST_PHONE, "demo_autofill": True})
+    assert response.json() == {"sent": True, "cooldown": 0, "demo_code": "123456"}
+    assert response.headers["cache-control"] == "no-store"
+    assert anon_client.get("/api/auth/me").json()["user"] is None
+
+
+def test_disabled_autofill_does_not_expose_code_or_send_from_stale_clients(anon_client, monkeypatch):
+    monkeypatch.setattr(config, "DEMO_LOGIN_AUTOFILL", False)
+    assert anon_client.get("/api/auth/me").json()["demo_autofill"] is False
+    manual = anon_client.post("/api/auth/code", json={"phone": TEST_PHONE})
+    assert manual.json() == {"sent": True, "cooldown": 60}
+    automatic = anon_client.post("/api/auth/code", json={"phone": TEST_PHONE, "demo_autofill": True})
+    assert automatic.status_code == 403
+    assert automatic.json()["error"]["code"] == "DEMO_DISABLED"
+    assert "demo_code" not in automatic.json()
+
+
 def test_login_rejects_wrong_code_and_missing_consent(anon_client):
     wrong = anon_client.post("/api/auth/login", json=_body(TEST_PHONE, code="000000"))
     assert wrong.json()["error"]["code"] == "INVALID_CODE"
     no_agree = anon_client.post("/api/auth/login", json=_body(TEST_PHONE, agreed=False))
     assert no_agree.json()["error"]["code"] == "AGREEMENT_REQUIRED"
-    no_adult = anon_client.post("/api/auth/login", json=_body(TEST_PHONE, adult_confirmed=False))
-    assert no_adult.json()["error"]["code"] == "ADULT_REQUIRED"
     assert anon_client.get("/api/auth/me").json()["user"] is None
 
 
@@ -71,3 +89,14 @@ def test_stats_count_only_my_books(client, book_factory):
     book_factory(user_id="999")
     stats = client.get("/api/me/stats").json()["stats"]
     assert stats["books"] == 1
+
+
+def test_login_needs_agreement_but_no_age_declaration(anon_client):
+    response = anon_client.post("/api/auth/login", json=_body(TEST_PHONE))
+    assert response.status_code == 200
+    assert anon_client.get("/api/auth/me").json()["user"] is not None
+
+
+def test_legacy_age_field_does_not_block_login(anon_client):
+    response = anon_client.post("/api/auth/login", json=_body(TEST_PHONE, adult_confirmed=False))
+    assert response.status_code == 200
