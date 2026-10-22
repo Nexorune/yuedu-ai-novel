@@ -47,6 +47,7 @@ def grade(questions: list[dict], answers: list[int]) -> dict:
 def submit_answers(book_id: int, chapter: dict, answers: list[int]) -> dict:
     """提交答案并处理解锁 / 失败降级。返回给 UI 的反馈。"""
     questions = chapter["questions"]
+    db.archive_mistakes(book_id, chapter, answers)
     result = grade(questions, answers)
     p = db.get_progress(book_id)
 
@@ -164,5 +165,5 @@ def answer_one(book_id: int, chapter: dict, index: int, choice: int) -> dict:
                 "retry_new_questions": "差一点就过关了！先回看原文，再换一套新题闯关。",
                 "retry_lower_difficulty": "题目可能偏难，换一套更简单的题再试试。",
             }.get(result.get("action"), "换一套最简单的题吧，答案都能在原文里直接找到。")
-    db.save_quiz_attempt(book_id, chapter["chapter_no"], answers, attempt["finished"])
+    db.save_quiz_attempt(book_id, chapter["chapter_no"], answers, attempt["finished"], chapter=chapter)
     return {**feedback, "answered": answered, "total": total, "result": result}

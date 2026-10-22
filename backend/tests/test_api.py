@@ -244,7 +244,7 @@ def test_chapter_responses_hide_answers(client, book_factory, chapter_factory):
         assert len(chapter["questions"]) == 5
         assert all(set(q) == {"type", "question", "options", "source_paragraph"} for q in chapter["questions"])
         assert '"answer"' not in response.text
-        assert "knowledge_points" not in chapter  # 通关前不发知识卡片
+        assert chapter["knowledge_points"] == []  # 知识清单可读，题目答案仍不泄露
 
 
 def test_book_detail_hides_hidden_ending(client, book_factory):

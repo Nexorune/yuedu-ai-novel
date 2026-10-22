@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import re
 import sqlite3
 import time
 from contextlib import contextmanager
@@ -91,6 +93,17 @@ CREATE TABLE IF NOT EXISTS quiz_attempts (
     updated_at TEXT NOT NULL,
     PRIMARY KEY (book_id, chapter_no)
 );
+CREATE TABLE IF NOT EXISTS mistakes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    book_id INTEGER NOT NULL,
+    chapter_no INTEGER NOT NULL,
+    question_key TEXT NOT NULL,
+    snapshot TEXT NOT NULL,
+    mastered INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    UNIQUE(book_id, chapter_no, question_key)
+);
+CREATE INDEX IF NOT EXISTS idx_mistakes_book ON mistakes(book_id);
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     phone TEXT NOT NULL UNIQUE,
@@ -148,6 +161,18 @@ def init_db() -> None:
             conn.execute("ALTER TABLE tasks ADD COLUMN public_error TEXT NOT NULL DEFAULT ''")
         except sqlite3.OperationalError:
             pass
+
+        rows = conn.execute("SELECT q.*, c.questions, c.knowledge_points, c.content, c.title"
+                            " FROM quiz_attempts q JOIN chapters c ON c.book_id=q.book_id"
+                            " AND c.chapter_no=q.chapter_no").fetchall()
+        for row in rows:
+            chapter = _parse_chapter(dict(row))
+            try:
+                answers = json.loads(row["answers"])
+            except (ValueError, TypeError):
+                continue
+            if isinstance(answers, list):
+                _archive_mistakes(conn, chapter, answers, row["updated_at"])
 
 
 # ---------------------------------------------------------------------------
@@ -359,13 +384,101 @@ def get_quiz_attempt(book_id: int, chapter_no: int) -> dict | None:
     return {"answers": answers if isinstance(answers, list) else [], "finished": bool(row["finished"])}
 
 
-def save_quiz_attempt(book_id: int, chapter_no: int, answers: list, finished: bool) -> None:
+def save_quiz_attempt(book_id: int, chapter_no: int, answers: list, finished: bool,
+                      chapter: dict | None = None) -> None:
     with get_conn() as conn:
         conn.execute(
             "INSERT INTO quiz_attempts(book_id, chapter_no, answers, finished, updated_at) VALUES(?,?,?,?,?)"
             " ON CONFLICT(book_id, chapter_no) DO UPDATE SET answers=excluded.answers,"
             " finished=excluded.finished, updated_at=excluded.updated_at",
             (book_id, chapter_no, json.dumps(answers), int(finished), time.strftime("%Y-%m-%d %H:%M:%S")))
+
+        if chapter:
+            _archive_mistakes(conn, {**chapter, "book_id": book_id}, answers)
+
+
+def source_paragraphs(content: str) -> list[dict]:
+    """与前端 parseChapter 保持相同分段，不以换行号冒充段落号。"""
+    content = re.sub(r"^\s*（AI 生成内容）\s*", "", content)
+    parts = []
+    current = None
+    for raw in content.split("\n"):
+        match = re.match(r"^\s*第\s*(\d+)\s*段\s*[:：]?\s*$", raw)
+        if match:
+            current = {"no": int(match.group(1)), "lines": []}
+            parts.append(current)
+        elif raw.strip():
+            if current is None:
+                current = {"no": None, "lines": []}
+                parts.append(current)
+            current["lines"].append(raw.strip())
+    return [{"no": part["no"], "text": "\n".join(part["lines"])}
+            for part in parts if part["lines"]]
+
+
+def _archive_mistakes(conn, chapter: dict, answers: list, created_at: str | None = None) -> None:
+    """持久化错题快照；未作答/正确题不收录，重试和迁移幂等。"""
+    from .quiz import knowledge_for_question
+    questions = chapter.get("questions") or []
+    parts = source_paragraphs(chapter.get("content") or "")
+    for i, (question, choice) in enumerate(zip(questions, answers)):
+        options = question.get("options") or []
+        answer = question.get("answer")
+        if (type(choice) is not int or type(answer) is not int or choice == answer
+                or not 0 <= choice < len(options) or not 0 <= answer < len(options)):
+            continue
+        knowledge = knowledge_for_question(questions, chapter.get("knowledge_points") or [], i)
+        source_no = question.get("source_paragraph")
+        source = next((part["text"] for part in parts if part["no"] == source_no), "") if source_no else ""
+        # 无分段标记的历史正文只能定位到全文，不伪造段落位置。
+        if not source and len(parts) == 1 and parts[0]["no"] is None:
+            source = parts[0]["text"]
+        snapshot = {"question": question.get("question", ""), "options": options,
+                    "answer": answer, "choice": choice, "type": question.get("type", ""),
+                    "explanation": question.get("explanation") or "",
+                    "knowledge": knowledge.get("point", "") if knowledge else "",
+                    "source_paragraph": source_no, "source_excerpt": source,
+                    "chapter_title": chapter.get("title") or ""}
+        identity = {k: snapshot[k] for k in ("question", "options", "answer", "source_excerpt")}
+        key = hashlib.sha256(json.dumps(identity, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+        conn.execute("INSERT OR IGNORE INTO mistakes(book_id,chapter_no,question_key,snapshot,created_at)"
+                     " VALUES(?,?,?,?,?)", (chapter["book_id"], chapter["chapter_no"], key,
+                     json.dumps(snapshot, ensure_ascii=False), created_at or time.strftime("%Y-%m-%d %H:%M:%S")))
+
+
+def archive_mistakes(book_id: int, chapter: dict, answers: list) -> None:
+    with get_conn() as conn:
+        _archive_mistakes(conn, {**chapter, "book_id": book_id}, answers)
+
+
+def list_mistakes(user_id: str) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute("SELECT m.*, b.title AS book_title, b.topic FROM mistakes m"
+                            " JOIN books b ON b.id=m.book_id WHERE b.user_id=?"
+                            " ORDER BY m.created_at DESC, m.id DESC", (str(user_id),)).fetchall()
+    return [{**json.loads(row["snapshot"]), "id": row["id"], "book_id": row["book_id"],
+             "book_title": row["book_title"], "topic": row["topic"], "chapter_no": row["chapter_no"],
+             "created_at": row["created_at"], "mastered": bool(row["mastered"])} for row in rows]
+
+
+def get_mistake(user_id: str, mistake_id: int) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute("SELECT m.*, b.title AS book_title, b.topic FROM mistakes m"
+                           " JOIN books b ON b.id=m.book_id WHERE b.user_id=? AND m.id=?",
+                           (str(user_id), mistake_id)).fetchone()
+    if not row:
+        return None
+    return {**json.loads(row["snapshot"]), "id": row["id"], "book_id": row["book_id"],
+            "book_title": row["book_title"], "topic": row["topic"], "chapter_no": row["chapter_no"],
+            "created_at": row["created_at"], "mastered": bool(row["mastered"])}
+
+
+def set_mistake_mastered(user_id: str, mistake_id: int, mastered: bool) -> bool:
+    with get_conn() as conn:
+        result = conn.execute("UPDATE mistakes SET mastered=? WHERE id=? AND book_id IN"
+                              " (SELECT id FROM books WHERE user_id=?)",
+                              (int(mastered), mistake_id, str(user_id)))
+        return result.rowcount > 0
 
 
 # ---------------------------------------------------------------------------

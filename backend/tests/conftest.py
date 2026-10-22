@@ -15,7 +15,7 @@ def clean_db():
     db.init_db()
     yield
     with db.get_conn() as conn:
-        for t in ("usage", "tasks", "progress", "endings", "story_bibles", "chapters", "books",
+        for t in ("mistakes", "quiz_attempts", "usage", "tasks", "progress", "endings", "story_bibles", "chapters", "books",
                   "sessions", "users"):
             conn.execute(f"DELETE FROM {t}")
 

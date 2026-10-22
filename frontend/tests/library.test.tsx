@@ -26,7 +26,8 @@ it("keeps workspace navigation separate and links the brand to the public home",
   const nav = within(screen.getByRole("navigation"));
   expect(nav.getByRole("link", { name: "学习书架" }).getAttribute("href")).toBe("/library");
   expect(nav.queryByRole("link", { name: "首页" })).toBeNull();
-  expect(nav.getAllByRole("link").map((link) => link.textContent)).toEqual(["新建学习", "学习书架"]);
+  expect(nav.getByRole("link", { name: "我的错题本" }).getAttribute("href")).toBe("/mistakes");
+  expect(nav.getAllByRole("link").map((link) => link.textContent)).toEqual(["新建学习", "学习书架", "我的错题本"]);
   expect(screen.getByRole("link", { name: "悦读" }).getAttribute("href")).toBe("/");
   expect(safeNext(null)).toBe("/library");
   expect(safeNext("/book/1")).toBe("/book/1");

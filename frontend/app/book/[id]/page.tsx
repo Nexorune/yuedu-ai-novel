@@ -4,11 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { ALargeSmall, ArrowLeft, ArrowRight, BookOpen, CircleAlert, CircleCheck, Flag, Images, List, RotateCcw, Sparkles, Swords, X } from "lucide-react";
-import { api, AnswerResult, AnswerReveal, AppError, Book, Chapter, errorMessage, Progress, Recap, Task } from "@/lib/api";
+import { api, AnswerResult, AnswerReveal, AppError, Book, Chapter, errorMessage, Mistake, Progress, Recap, Task } from "@/lib/api";
 import { ActiveTask, clearTask, loadTask, saveTask, taskState } from "@/lib/task";
-import { chapterTitle, countChars, findParagraph, knowledgeTerms, parseChapter, readingMinutes } from "@/lib/chapter";
+import { chapterTitle, countChars, findMistakeParagraph, findParagraph, knowledgeTerms, parseChapter, readingMinutes } from "@/lib/chapter";
 import { loadPosition, loadReadingSize, loadReadingTheme, READING_SIZES, ReadingSize, ReadingTheme, saveLastBook, savePosition, saveReadingSize, saveReadingTheme, stepReadingSize } from "@/lib/prefs";
-import { KnowledgeCards } from "@/components/reader/KnowledgeCards";
 import { QuizMode } from "@/components/reader/QuizMode";
 import { SettingsSheet, TocDrawer } from "@/components/reader/ReaderSheets";
 import { WaitingPanel } from "@/components/reader/WaitingPanel";
@@ -29,6 +28,8 @@ export default function ReadingPage() {
   const params = useParams<{ id: string }>();
   const searchParams = useSearchParams();
   const bookId = Number(params.id);
+  const mistakeId = Number(searchParams.get("mistake")) || null;
+  const [mistake, setMistake] = useState<Mistake | null>(null);
   const [book, setBook] = useState<Book | null>(null);
   const [outlineReady, setOutlineReady] = useState(false);
   const [progress, setProgress] = useState<Progress | null>(null);
@@ -49,6 +50,7 @@ export default function ReadingPage() {
   const [readingSize, setReadingSize] = useState<ReadingSize>("m");
   const [theme, setTheme] = useState<ReadingTheme>("paper");
   const [tocOpen, setTocOpen] = useState(false);
+  const [drawerView, setDrawerView] = useState<"chapters" | "knowledge">("chapters");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [barsHidden, setBarsHidden] = useState(false);
   const [scrollProgress, setScrollProgress] = useState(0);
@@ -66,16 +68,22 @@ export default function ReadingPage() {
       return;
     }
     try {
+      if (mistakeId) {
+        const { mistake: saved } = await api.mistake(mistakeId);
+        if (saved.book_id !== bookId) throw new AppError("HTTP_404", "这道错题不属于当前书籍，请返回错题本重新打开。");
+        setMistake(saved);
+        target = target || saved.chapter_no;
+      }
       const detail = await api.book(bookId);
       setBook(detail.book);
       setOutlineReady(detail.outline_ready);
       setProgress(detail.progress);
-      saveLastBook(bookId);
+      if (!mistakeId) saveLastBook(bookId);
       const next = detail.progress.current_chapter + 1;
       let found: Chapter | null = null;
       if (target) {
         // 指定章节打不开（不存在或还没解锁）时，回到正常的阅读进度
-        found = await api.chapter(bookId, target).then((response) => response.chapter).catch(() => null);
+        found = mistakeId ? (await api.chapter(bookId, target)).chapter : await api.chapter(bookId, target).then((response) => response.chapter).catch(() => null);
       }
       if (!found) {
         try {
@@ -94,7 +102,7 @@ export default function ReadingPage() {
     } finally {
       setLoading(false);
     }
-  }, [bookId]);
+  }, [bookId, mistakeId]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -104,10 +112,10 @@ export default function ReadingPage() {
       setTheme(loadReadingTheme());
       const stored = loadTask(bookId);
       const queryId = Number(searchParams.get("task"));
-      setActive(stored || (Number.isInteger(queryId) && queryId > 0 ? { id: queryId, kind: "outline" } : null));
+      setActive(mistakeId ? null : stored || (Number.isInteger(queryId) && queryId > 0 ? { id: queryId, kind: "outline" } : null));
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [bookId, load, searchParams]);
+  }, [bookId, load, searchParams, mistakeId]);
 
   // 阅读背景作用在阅读页（含闯关弹层）；首页等其他页面不受影响
   useEffect(() => {
@@ -117,10 +125,20 @@ export default function ReadingPage() {
 
   const paragraphs = useMemo(() => (chapter ? parseChapter(chapter.content) : []), [chapter]);
   const chapterNo = chapter?.chapter_no;
+  const mistakeParagraph = mistake && mistake.chapter_no === chapterNo ? findMistakeParagraph(paragraphs, mistake) : -1;
+
+  useEffect(() => {
+    if (mistakeParagraph < 0) return;
+    const timer = window.setTimeout(() => {
+      const target = document.getElementById("pi-" + mistakeParagraph);
+      if (target) window.scrollTo({ top: target.getBoundingClientRect().top + window.scrollY - 100, behavior: "instant" });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [mistakeParagraph, chapterNo]);
 
   // 打开章节：回到上次读到的段落；没读过就从头开始
   useEffect(() => {
-    if (chapterNo === undefined) return;
+    if (chapterNo === undefined || mistakeId) return;
     const timer = window.setTimeout(() => {
       const saved = loadPosition(bookId);
       const target = saved && saved.chapter === chapterNo && saved.paragraph >= 2 ? document.getElementById("pi-" + saved.paragraph) : null;
@@ -133,7 +151,7 @@ export default function ReadingPage() {
       }
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [bookId, chapterNo]);
+  }, [bookId, chapterNo, mistakeId]);
 
   useEffect(() => {
     if (!resumed) return;
@@ -156,7 +174,7 @@ export default function ReadingPage() {
       else if (lastY - y > 8) setBarsHidden(false);
       lastY = y;
       const now = Date.now();
-      if (chapterNo !== undefined && now - lastSave > 600) {
+      if (!mistakeId && chapterNo !== undefined && now - lastSave > 600) {
         lastSave = now;
         const items = document.querySelectorAll<HTMLElement>(".r-para");
         for (let i = 0; i < items.length; i++) {
@@ -175,7 +193,7 @@ export default function ReadingPage() {
       window.removeEventListener("resize", schedule);
       window.cancelAnimationFrame(frame);
     };
-  }, [bookId, chapterNo]);
+  }, [bookId, chapterNo, mistakeId]);
 
   useEffect(() => {
     if (!active) return;
@@ -229,7 +247,7 @@ export default function ReadingPage() {
   // 来到闯关区时在后台提前写下一章（规则与之前一致：通关前读不到）
   useEffect(() => {
     const chapterKey = `${bookId}:${chapter?.chapter_no}`;
-    if (!chapter || !book || !progress || chapter.status === "unlocked" || chapter.is_ending ||
+    if (mistakeId || !chapter || !book || !progress || chapter.status === "unlocked" || chapter.is_ending ||
         book.status !== "reading" || chapter.chapter_no >= book.planned_chapters ||
         chapter.chapter_no !== progress.current_chapter + 1 || prefetchedChapter.current === chapterKey) return;
     const level = levelRef.current;
@@ -258,7 +276,7 @@ export default function ReadingPage() {
     }, { rootMargin: "300px 0px" });
     observer.observe(level);
     return () => observer.disconnect();
-  }, [bookId, book, chapter, progress]);
+  }, [bookId, book, chapter, progress, mistakeId]);
 
   useEffect(() => {
     if (prefetchTask === null || prefetchReady) return;
@@ -438,7 +456,7 @@ export default function ReadingPage() {
   const generating = active !== null;
   const finishedChapter = chapter?.status === "unlocked";
   const canReadNext = outlineReady && !generating && !busy && book?.status === "reading" && progress && progress.current_chapter < book.planned_chapters && (!chapter || finishedChapter);
-  const awaitingFirstChapter = !loading && !error && !chapter && !!canReadNext && progress?.current_chapter === 0;
+  const awaitingFirstChapter = !mistakeId && !loading && !error && !chapter && !!canReadNext && progress?.current_chapter === 0;
 
   // 大纲写好、还没有任何章节时，自动开始写第一章（只自动一次；失败后留着「开始第一章」按钮手动重试）
   useEffect(() => {
@@ -484,13 +502,13 @@ export default function ReadingPage() {
 
   return (
     <div className="reader-shell">
-      <header className={"r-top" + (barsHidden && !tocOpen && !settingsOpen ? " is-hidden" : "")} inert={backgroundInert}>
+      <header className={"r-top" + (barsHidden && !mistakeId && !tocOpen && !settingsOpen ? " is-hidden" : "")} inert={backgroundInert}>
         <div className="r-top-inner">
-          <Link className="r-back" href="/library" aria-label="返回学习记录"><ArrowLeft size={20} /><span>记录</span></Link>
+          <Link className="r-back" href={mistakeId ? `/mistakes?book=${bookId}` : "/library"} aria-label={mistakeId ? "返回我的错题本" : "返回学习记录"}><ArrowLeft size={20} /><span>{mistakeId ? "错题本" : "记录"}</span></Link>
           <div className="r-top-title">{book && <><b>{title}</b>{chapter && <span>{chapter.is_ending ? "大结局" : `第 ${chapter.chapter_no} 章`}</span>}</>}</div>
           <div className="r-tools">
             {generating && <span className="r-pill" aria-hidden="true"><i />生成中 {seconds}s</span>}
-            <button type="button" className="icon-button" onClick={() => setTocOpen(true)} aria-label="目录" disabled={!book}><List size={20} /></button>
+            <button type="button" className="icon-button" onClick={() => { setDrawerView("chapters"); setTocOpen(true); }} aria-label="目录与知识点" title="目录与知识点" aria-expanded={tocOpen} aria-controls="reader-library-panel" disabled={!book}><List size={20} /></button>
             <button type="button" className="icon-button" onClick={() => setSettingsOpen(true)} aria-label="阅读设置：字号与背景"><ALargeSmall size={20} /></button>
           </div>
         </div>
@@ -512,6 +530,11 @@ export default function ReadingPage() {
           </div>
         ) : (
           <>
+            {mistake && <aside className="r-mistake-note">
+              <span>错题知识回顾 · 第 {mistake.chapter_no} 章</span><p>{mistake.question}</p>
+              {mistakeParagraph >= 0 ? <button type="button" onClick={() => { setBarsHidden(false); document.getElementById("pi-" + mistakeParagraph)?.scrollIntoView({ block: "center", behavior: "smooth" }); }}>定位高亮知识段落 <ArrowRight size={14} /></button> : <p>当前章节未找到对应段落，可返回错题本查看保存的原文摘录。</p>}
+              <Link href={`/mistakes?book=${bookId}`}>返回我的错题本</Link>
+            </aside>}
             {chapter && (
               <article className="r-chapter" aria-labelledby="chapter-title">
                 <header className="r-head">
@@ -521,7 +544,7 @@ export default function ReadingPage() {
                 </header>
                 <div className="r-body" style={{ fontSize: size.px }} onClick={toggleBars}>
                   {paragraphs.map((paragraph, i) => (
-                    <div key={i} id={"pi-" + i} className={"r-para" + (flashPara === i ? " is-flash" : "")}>
+                    <div key={i} id={"pi-" + i} className={"r-para" + (flashPara === i || mistakeParagraph === i ? " is-flash" : "")}>
                       {paragraph.lines.map((line, j) => <p key={j}>{line}</p>)}
                     </div>
                   ))}
@@ -567,7 +590,6 @@ export default function ReadingPage() {
                   <Sparkles size={26} className="r-card-icon" />
                   <h2>全书完</h2>
                   <p>这个故事走到了结局。去结局画廊看看，还有哪些不同的结局等你解锁。</p>
-                  {chapter.knowledge_points && <KnowledgeCards points={chapter.knowledge_points} heading="这一章的收获" />}
                   <div className="r-actions">
                     <Link className="button button-primary" href={`/book/${bookId}/gallery`}><Images size={17} />查看结局画廊</Link>
                     <Link className="button button-light" href="/library">回到学习记录</Link>
@@ -576,9 +598,6 @@ export default function ReadingPage() {
               ) : finishedChapter ? (
                 <div className="r-card">
                   <p className="r-pass"><CircleCheck size={18} />{levelLabel}已通关{reviewing ? "" : result?.passed ? ` · 答对 ${result.correct}/${result.total}` : ""}</p>
-                  {chapter.knowledge_points && chapter.knowledge_points.length > 0 && (
-                    <KnowledgeCards points={chapter.knowledge_points} heading="本章收获" note="这一章你学会了这些" />
-                  )}
                   <div className="r-actions">
                     {reviewing && <button className="button button-primary" type="button" disabled={busy} onClick={() => void goToChapter(chapter.chapter_no + 1)}>下一章 <ArrowRight size={17} /></button>}
                     {!reviewing && canReadNext && <button className="button button-primary button-3d" type="button" onClick={() => void nextChapter()}>读下一章 <ArrowRight size={17} /></button>}
@@ -663,6 +682,9 @@ export default function ReadingPage() {
       {book && (
         <TocDrawer
           open={tocOpen}
+          chapter={chapter}
+          view={drawerView}
+          onView={setDrawerView}
           onClose={() => setTocOpen(false)}
           book={book}
           title={title}
