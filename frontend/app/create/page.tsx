@@ -125,7 +125,6 @@ export default function CreatePage() {
         planned_chapters: mode === "quick" ? 1 : chapters,
         min_words: minWords,
         max_words: maxWords,
-        adult_confirmed: true,
       });
       saveTask(result.book_id, { id: result.task_id, kind: "outline" });
       router.push("/book/" + result.book_id + "?task=" + result.task_id);

@@ -210,10 +210,6 @@ def reading_loop(book_id: int) -> None:
 
 
 def new_book() -> None:
-    if not security.require_adult():
-        print("未满 18 岁无法使用本产品。")
-        return
-
     print(f"\n{LINE}\n新建一本小说\n{LINE}")
     g = pick(GENRES, "选小说类型：")
     genre = GENRES[g - 1]

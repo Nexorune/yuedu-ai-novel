@@ -45,4 +45,5 @@ PRICE_OUTPUT_PER_1M = float(os.getenv("PRICE_OUTPUT_PER_1M", "12"))   # 元/百�
 # 登录（演示版：不发真实短信，验证码统一用演示码；正式上线前换成真实短信 + 防刷）
 DEMO_LOGIN_CODE = os.getenv("DEMO_LOGIN_CODE", "246810")
 SESSION_DAYS = int(os.getenv("SESSION_DAYS", "30"))
+DEMO_LOGIN_AUTOFILL = os.getenv("DEMO_LOGIN_AUTOFILL", "false").lower() == "true"
 COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() == "true"   # 部署到 https 后改为 true

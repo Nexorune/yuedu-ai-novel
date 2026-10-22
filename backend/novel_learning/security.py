@@ -1,4 +1,4 @@
-"""安全守卫：18+ 门槛、关键词兜底、每日生成上限、越权拒绝。"""
+"""安全守卫：关键词兜底、每日生成上限、越权拒绝。"""
 from __future__ import annotations
 
 import logging
@@ -15,9 +15,8 @@ BLOCKED_KEYWORDS = [
 
 
 def require_adult() -> bool:
-    """18+ 门槛：MVP 用自声明确认（产品化后换实名/支付校验）。"""
-    ans = input("本产品仅面向 18 岁以上成年人，请确认你已满 18 岁 [y/N]：").strip().lower()
-    return ans in ("y", "yes", "是")
+    """旧调用方的兼容入口：学习产品不设成年门槛，不再询问年龄。"""
+    return True
 
 
 def keyword_moderate(text: str) -> tuple[bool, str]:

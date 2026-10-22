@@ -62,18 +62,17 @@ class BookCreate(BaseModel):
     min_words: int = Field(ge=800, le=5000)
     max_words: int = Field(ge=800, le=10000)
     mode: Literal["full", "quick"] = "full"
-    adult_confirmed: bool = False
 
 
 class CodeRequest(BaseModel):
     phone: str
+    demo_autofill: bool = False
 
 
 class LoginRequest(BaseModel):
     phone: str
     code: str
     agreed: bool = False
-    adult_confirmed: bool = False
 
 
 class AnswerSubmit(BaseModel):
@@ -297,6 +296,12 @@ def send_code(payload: CodeRequest):
     # 演示版不发真实短信，只校验手机号格式；上线前在这里接短信服务并加限频
     if not PHONE_PATTERN.match(payload.phone.strip()):
         return err("INVALID_PHONE", "请输入正确的 11 位手机号", 400)
+    # 必须由本地环境显式开启；旧页面的自动请求在关闭开关后也不得变成短信发送。
+    if payload.demo_autofill and not config.DEMO_LOGIN_AUTOFILL:
+        return err("DEMO_DISABLED", "测试自动填写已关闭，请手动获取验证码", 403)
+    if config.DEMO_LOGIN_AUTOFILL:
+        return JSONResponse({"sent": True, "cooldown": 0, "demo_code": config.DEMO_LOGIN_CODE},
+                            headers={"Cache-Control": "no-store"})
     return {"sent": True, "cooldown": 60}
 
 
@@ -309,8 +314,6 @@ def login(payload: LoginRequest):
         return err("INVALID_CODE", "验证码不正确", 400)
     if not payload.agreed:
         return err("AGREEMENT_REQUIRED", "请先阅读并同意《用户协议》和《隐私政策》", 400)
-    if not payload.adult_confirmed:
-        return err("ADULT_REQUIRED", "本产品仅面向 18 岁以上成年人，请先确认", 403)
     user, created = db.get_or_create_user(phone)
     token = secrets.token_urlsafe(32)
     max_age = config.SESSION_DAYS * 86400
@@ -336,7 +339,8 @@ def me(request: Request):
     """未登录时返回 user=null（不算错误），方便页面决定显示「登录」还是头像。"""
     token = request.cookies.get(SESSION_COOKIE, "")
     user = db.get_session_user(_hash_token(token)) if token else None
-    return {"user": public_user(user) if user else None}
+    return {"user": public_user(user) if user else None,
+            "demo_autofill": config.DEMO_LOGIN_AUTOFILL}
 
 
 @app.get("/api/me/stats")

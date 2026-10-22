@@ -54,7 +54,7 @@ def chapter_factory():
 
 def login(c, phone: str = TEST_PHONE):
     return c.post("/api/auth/login", json={"phone": phone, "code": config.DEMO_LOGIN_CODE,
-                                           "agreed": True, "adult_confirmed": True})
+                                           "agreed": True})
 
 
 @pytest.fixture

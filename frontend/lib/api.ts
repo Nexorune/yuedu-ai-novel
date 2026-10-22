@@ -137,12 +137,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   me() {
-    return request<{ user: User | null }>("/auth/me");
+    return request<{ user: User | null; demo_autofill?: boolean }>("/auth/me");
   },
-  sendCode(phone: string) {
-    return request<{ sent: boolean; cooldown: number }>("/auth/code", { method: "POST", body: JSON.stringify({ phone }) });
+  sendCode(phone: string, demoAutofill = false) {
+    return request<{ sent: boolean; cooldown: number; demo_code?: string }>("/auth/code", { method: "POST", body: JSON.stringify({ phone, demo_autofill: demoAutofill }) });
   },
-  login(input: { phone: string; code: string; agreed: boolean; adult_confirmed: boolean }) {
+  login(input: { phone: string; code: string; agreed: boolean }) {
     return request<{ user: User; created: boolean }>("/auth/login", { method: "POST", body: JSON.stringify(input) });
   },
   logout() {
@@ -164,7 +164,7 @@ export const api = {
   },
   createBook(input: {
     genre: string; topic: string; mode: "full" | "quick";
-    planned_chapters: number; min_words: number; max_words: number; adult_confirmed: boolean;
+    planned_chapters: number; min_words: number; max_words: number;
   }) {
     return request<{ book_id: number; task_id: number }>("/books", { method: "POST", body: JSON.stringify(input) });
   },
