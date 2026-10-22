@@ -486,7 +486,7 @@ export default function ReadingPage() {
     <div className="reader-shell">
       <header className={"r-top" + (barsHidden && !tocOpen && !settingsOpen ? " is-hidden" : "")} inert={backgroundInert}>
         <div className="r-top-inner">
-          <Link className="r-back" href="/create#books" aria-label="返回学习记录"><ArrowLeft size={20} /><span>记录</span></Link>
+          <Link className="r-back" href="/library" aria-label="返回学习记录"><ArrowLeft size={20} /><span>记录</span></Link>
           <div className="r-top-title">{book && <><b>{title}</b>{chapter && <span>{chapter.is_ending ? "大结局" : `第 ${chapter.chapter_no} 章`}</span>}</>}</div>
           <div className="r-tools">
             {generating && <span className="r-pill" aria-hidden="true"><i />生成中 {seconds}s</span>}
@@ -508,7 +508,7 @@ export default function ReadingPage() {
             <CircleAlert size={30} strokeWidth={1.6} />
             <h2>这本书暂时打不开</h2>
             <p>{error || "请返回学习记录重新选择。"}</p>
-            <Link className="button button-light" href="/create#books"><ArrowLeft size={16} />返回学习记录</Link>
+            <Link className="button button-light" href="/library"><ArrowLeft size={16} />返回学习记录</Link>
           </div>
         ) : (
           <>
@@ -570,7 +570,7 @@ export default function ReadingPage() {
                   {chapter.knowledge_points && <KnowledgeCards points={chapter.knowledge_points} heading="这一章的收获" />}
                   <div className="r-actions">
                     <Link className="button button-primary" href={`/book/${bookId}/gallery`}><Images size={17} />查看结局画廊</Link>
-                    <Link className="button button-light" href="/create#books">回到学习记录</Link>
+                    <Link className="button button-light" href="/library">回到学习记录</Link>
                   </div>
                 </div>
               ) : finishedChapter ? (

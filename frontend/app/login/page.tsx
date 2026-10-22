@@ -53,7 +53,7 @@ export default function LoginPage() {
       if (cancelled || request !== codeRequest.current || currentPhone.current !== phone) return;
       if (result.demo_code && /^\d{6}$/.test(result.demo_code)) {
         setCode(result.demo_code);
-        setHint("演示验证码已自动填写，确认后即可登录");
+        setHint("验证码已填写");
         setError("");
       }
     }).catch((cause) => {
@@ -107,7 +107,7 @@ export default function LoginPage() {
       setCooldown(result.cooldown);
       if (demoMode && result.demo_code && /^\d{6}$/.test(result.demo_code)) {
         setCode(result.demo_code);
-        setHint("演示验证码已自动填写，确认后即可登录");
+        setHint("验证码已填写");
       } else {
         setHint("验证码已发送");
       }
@@ -157,7 +157,7 @@ export default function LoginPage() {
 
         <label className="login-check"><input type="checkbox" checked={agreed} onChange={(event) => { edited.current = true; setAgreed(event.target.checked); setError(""); saveLoginMemory({ phone, agreed: event.target.checked }, demoMode); }} /><span>我已阅读并同意 <Link href="/terms" target="_blank">《用户协议》</Link>和<Link href="/privacy" target="_blank">《隐私政策》</Link></span></label>
 
-        {demoMode && <div className="login-memory"><span>本机测试：记住手机号和勾选项，点击手机号自动填码。</span><button type="button" onClick={forget}>清除记录</button></div>}
+        {demoMode && <div className="login-memory"><span>在此设备记住登录信息</span><button type="button" onClick={forget}>清除记录</button></div>}
 
         {error && <p className="form-error" role="alert">{error}</p>}
         <button className="button button-primary button-wide" type="submit" disabled={submitting}>{submitting ? "正在登录…" : "登录"} <ArrowRight size={18} /></button>

@@ -32,6 +32,6 @@ export function useAccount(required = false): { user: User | null; ready: boolea
 }
 
 /** 只允许站内相对地址作为登录后的去处，防止被带到外部网站。 */
-export function safeNext(value: string | null, fallback = "/create"): string {
+export function safeNext(value: string | null, fallback = "/library"): string {
   return value && value.startsWith("/") && !value.startsWith("//") ? value : fallback;
 }

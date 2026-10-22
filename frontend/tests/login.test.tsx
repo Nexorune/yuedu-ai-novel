@@ -34,6 +34,8 @@ describe("remembered demo login", () => {
     fireEvent.focus(phoneInput());
     await waitFor(() => expect(codeInput().value).toBe(CODE));
     expect(api.sendCode).toHaveBeenCalledWith(PHONE, true);
+    expect(screen.getByRole("status").textContent).toBe("验证码已填写");
+    expect(screen.queryByText(/演示|本机测试/)).toBeNull();
     expect(localStorage.getItem("yuedu-login-memory-v1")).not.toContain(CODE);
   });
 

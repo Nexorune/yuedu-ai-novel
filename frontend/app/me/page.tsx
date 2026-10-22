@@ -36,7 +36,7 @@ export default function MePage() {
 
   return (
     <div className="site-shell">
-      <SiteHeader user={user} nav={[{ href: "/create", label: "开始学习" }, { href: "/create#books", label: "学习记录" }]} />
+      <SiteHeader user={user} nav={[{ href: "/create", label: "开始学习" }, { href: "/library", label: "学习记录" }]} />
       <main className="me-main">
         <section className="me-card me-profile">
           <span className="avatar avatar-large">{user.nickname.slice(-2)}</span>
@@ -54,7 +54,7 @@ export default function MePage() {
         {error && <p className="form-error" role="alert">{error}</p>}
 
         <section className="me-card me-menu">
-          <Link href="/create#books"><BookOpen size={18} /><span>我的学习记录</span><ChevronRight size={17} /></Link>
+          <Link href="/library"><BookOpen size={18} /><span>我的学习记录</span><ChevronRight size={17} /></Link>
           <Link href="/terms"><FileText size={18} /><span>用户协议</span><ChevronRight size={17} /></Link>
           <Link href="/privacy"><ShieldCheck size={18} /><span>隐私政策</span><ChevronRight size={17} /></Link>
           <button type="button" onClick={() => void logout()} disabled={leaving}><LogOut size={18} /><span>{leaving ? "正在退出…" : "退出登录"}</span><ChevronRight size={17} /></button>

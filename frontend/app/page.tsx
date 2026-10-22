@@ -20,14 +20,15 @@ const FAQ = [
   { q: "答错了会卡住吗？", a: "不会。答错有讲解、能回看原文，重新闯关时题目会逐步变简单，一定能过。" },
 ];
 
-// 落地页：只展示产品，不提供操作；所有按钮未登录时去登录页，登录后进入创作页
+// 首页始终是独立落地页，登录状态只改变进入学习区的入口。
 export default function Landing() {
   const { user, ready } = useAccount();
-  const start = user ? "/create" : "/login?next=%2Fcreate";
+  if (!ready) return <div className="app-loading">正在打开悦读…</div>;
+  const start = user ? "/library" : "/login?next=%2Flibrary";
 
   return (
-    <div className={`${styles.landing} ${ready && user ? `site-shell ${styles.member}` : styles.publicPage}`}>
-      <SiteHeader user={user} ready={ready} />
+    <div className={`${styles.landing} ${styles.publicPage}`}>
+      <SiteHeader user={user} ready={ready} publicView />
 
       <main className={styles.main}>
         <section className={styles.hero} aria-labelledby="landing-title">
