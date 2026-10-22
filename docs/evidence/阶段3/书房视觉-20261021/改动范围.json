@@ -1,0 +1,12 @@
+{
+  "modified": [
+    "frontend/app/icon.svg",
+    "frontend/app/layout.tsx",
+    "frontend/components/site/SiteHeader.tsx",
+    "frontend/README.md"
+  ],
+  "added": [
+    "frontend/app/library.css"
+  ],
+  "business_source_unchanged": true
+}

@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>悦读 · 网文阅读 × 学习关卡</title>
+<style>
+  :root { --bg:#f6f4ef; --card:#fffdf8; --ink:#2b2b2b; --accent:#c05a3c; --line:#e5dfd3; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+         background:var(--bg); color:var(--ink); line-height:1.7; }
+  .wrap { max-width:720px; margin:0 auto; padding:16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px;
+          padding:18px; margin-bottom:16px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  h2 { font-size:18px; margin:0 0 12px; }
+  .sub { color:#8a837a; font-size:13px; }
+  button { cursor:pointer; border:none; border-radius:8px; padding:10px 16px;
+           background:var(--accent); color:#fff; font-size:15px; }
+  button.ghost { background:#eee9df; color:#5b544a; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  label { display:block; margin-bottom:10px; font-size:14px; }
+  input, select { width:100%; padding:9px 10px; border:1px solid var(--line);
+                  border-radius:8px; font-size:15px; margin-top:4px; background:#fff; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; }
+  .row > label { flex:1; min-width:130px; }
+  .chapter-content { white-space:pre-wrap; font-size:16px; }
+  .quiz-q { border-top:1px solid var(--line); padding:12px 0; }
+  .quiz-q .qtext { font-weight:600; margin-bottom:8px; }
+  .opt { display:block; padding:8px 10px; border:1px solid var(--line); border-radius:8px;
+         margin-bottom:6px; cursor:pointer; }
+  .opt.sel { border-color:var(--accent); background:#fbeae3; }
+  .badge { display:inline-block; padding:2px 8px; border-radius:6px; font-size:12px;
+           background:#eef0f2; color:#5b544a; margin-right:6px; }
+  .ok { color:#2e7d32; } .warn { color:#b3541e; } .err { color:#c0392b; }
+  .hint { background:#fdf3e0; border-radius:8px; padding:10px 12px; font-size:14px; }
+  .muted { color:#8a837a; font-size:13px; }
+  .hidden { display:none; }
+  .spinner { display:inline-block; width:14px; height:14px; border:2px solid #fff;
+             border-top-color:transparent; border-radius:50%; animation:s .8s linear infinite; }
+  @keyframes s { to { transform:rotate(360deg); } }
+  .topbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+  .gallery-item { display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--line); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- 18+ 门槛 -->
+  <div id="gate" class="card">
+    <h1>悦读</h1>
+    <p class="sub">网文阅读 × 学习关卡 · 边追更，边学东西</p>
+    <p>本产品仅面向 <b>18 岁以上</b> 成年人，内容为 AI 生成，请在阅读前确认。</p>
+    <label><input type="checkbox" id="adult"> 我已年满 18 岁，同意使用本产品</label>
+    <button id="enterBtn" disabled>进入</button>
+  </div>
+
+  <!-- 主页：书列表 + 新建 -->
+  <div id="home" class="hidden">
+    <div class="topbar"><h1>悦读</h1><button class="ghost" id="logoutBtn">退出</button></div>
+
+    <div class="card">
+      <h2>📚 我的书</h2>
+      <div id="bookList"><p class="muted">还没有书，先新建一本。</p></div>
+    </div>
+
+    <div class="card">
+      <h2>✍️ 新建一本小说</h2>
+      <label>小说类型
+        <select id="genre">
+          <option>爽文</option><option>言情</option><option>都市</option>
+          <option>玄幻</option><option>悬疑</option>
+        </select>
+      </label>
+      <label>想学的主题（如 AI、英语、复利）<input id="topic" placeholder="AI"></label>
+      <label>模式
+        <select id="mode">
+          <option value="full">整本连载（多章）</option>
+          <option value="quick">快速短篇（一个知识点，1 章）</option>
+        </select>
+      </label>
+      <div class="row" id="chaptersRow">
+        <label>章节数（1–50）<input id="chapters" type="number" value="10" min="1" max="50"></label>
+        <label>每章最少字数<input id="minWords" type="number" value="1500" min="800" max="5000"></label>
+        <label>每章最多字数<input id="maxWords" type="number" value="2500" min="800" max="10000"></label>
+      </div>
+      <button id="createBtn">创建并开始</button>
+    </div>
+  </div>
+
+  <!-- 阅读视图 -->
+  <div id="reading" class="hidden">
+    <div class="topbar">
+      <button class="ghost" id="backHome">← 返回</button>
+      <span class="sub" id="bookMeta"></span>
+      <button class="ghost" id="galleryBtn">结局画廊</button>
+    </div>
+
+    <div class="card">
+      <div id="chapterHead"></div>
+      <div id="chapterBody" class="chapter-content"></div>
+    </div>
+
+    <div class="card hidden" id="quizCard">
+      <h2>📝 本章测验（答对 <span id="passNeed">3</span>/5 解锁下一章）</h2>
+      <div id="quizList"></div>
+      <div id="quizFeedback"></div>
+      <button id="submitBtn">提交答案</button>
+    </div>
+
+    <div class="card" id="actionCard">
+      <div class="row">
+        <button id="nextBtn">读下一章</button>
+        <button class="ghost" id="finalizeBtn">就此完结</button>
+      </div>
+      <div id="genStatus" class="muted" style="margin-top:10px"></div>
+    </div>
+  </div>
+
+  <!-- 结局画廊 -->
+  <div id="gallery" class="hidden">
+    <div class="topbar"><h2>🏆 结局画廊</h2><button class="ghost" id="galleryBack">← 返回</button></div>
+    <div class="card" id="galleryList"></div>
+  </div>
+
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let state = { bookId:null, chapter:null, adult:false };
+
+async function api(path, method='GET', body) {
+  const opts = { method, headers:{} };
+  if (body) { opts.headers['Content-Type']='application/json'; opts.body=JSON.stringify(body); }
+  const res = await fetch(path, opts);
+  const data = await res.json().catch(()=>({}));
+  if (!res.ok) throw new Error((data.error && data.error.message) || ('请求失败 ' + res.status));
+  return data;
+}
+
+async function poll(taskId, startMsg) {
+  const t0 = Date.now();
+  while (true) {
+    const t = await api('/api/tasks/' + taskId);
+    const elapsed = Math.round((Date.now() - t0) / 1000);
+    if (t.status === 'done') return t;
+    if (t.status === 'error') throw new Error(t.error || '生成失败');
+    const prog = t.progress || startMsg || '生成中';
+    toast(`<span class="spinner"></span> ${prog}（已等待 ${elapsed} 秒，模型正在写，请稍候）`);
+    await new Promise(r => setTimeout(r, 1500));
+  }
+}
+
+function toast(msg, cls='') {
+  const el = $('genStatus'); el.innerHTML = msg; el.className = cls + ' muted';
+}
+
+// ---------- 门槛 ----------
+$('adult').addEventListener('change', e => $('enterBtn').disabled = !e.target.checked);
+$('enterBtn').addEventListener('click', () => { state.adult = true; show('home'); loadBooks(); });
+$('logoutBtn').addEventListener('click', () => { state.adult=false; show('gate'); });
+$('backHome').addEventListener('click', () => { show('home'); loadBooks(); });
+
+// ---------- 视图切换 ----------
+function show(name) {
+  ['gate','home','reading','gallery'].forEach(n => $(n).classList.toggle('hidden', n!==name));
+}
+
+// ---------- 书列表 ----------
+async function loadBooks() {
+  const { books } = await api('/api/books');
+  const box = $('bookList');
+  if (!books.length) { box.innerHTML = '<p class="muted">还没有书，先新建一本。</p>'; return; }
+  box.innerHTML = books.map(b => `
+    <div class="gallery-item">
+      <span><b>#${b.id}</b> 《${b.title||b.topic+'之旅'}》 · 学习 ${b.topic}（${b.mode==='quick'?'短篇':b.planned_chapters+' 章'}）<span class="badge">${b.status==='completed'?'已完结':'连载中'}</span></span>
+      <button class="ghost" onclick="openBook(${b.id})">打开</button>
+    </div>`).join('');
+}
+
+// ---------- 新建书 ----------
+$('mode').addEventListener('change', e => {
+  $('chaptersRow').style.display = e.target.value === 'quick' ? 'none' : 'flex';
+});
+$('createBtn').addEventListener('click', async () => {
+  try {
+    const payload = {
+      genre: $('genre').value,
+      topic: $('topic').value.trim() || 'AI',
+      mode: $('mode').value,
+      planned_chapters: parseInt($('chapters').value) || 10,
+      min_words: parseInt($('minWords').value) || 1500,
+      max_words: parseInt($('maxWords').value) || 2500,
+      adult_confirmed: state.adult,
+    };
+    $('createBtn').disabled = true; $('createBtn').innerHTML = '<span class="spinner"></span> 创建中…';
+    const r = await api('/api/books', 'POST', payload);
+    state.bookId = r.book_id;
+    openBook(r.book_id);
+    await poll(r.task_id, '正在生成全书大纲…');
+    toast('大纲已生成，可以开始读第一章了');
+  } catch (e) { toast(e.message, 'err'); }
+  finally { $('createBtn').disabled = false; $('createBtn').innerHTML = '创建并开始'; }
+});
+
+// ---------- 打开书 ----------
+async function openBook(id) {
+  state.bookId = id;
+  const d = await api('/api/books/' + id);
+  $('bookMeta').textContent = `#${id} 《${d.book.title||d.book.topic+'之旅'}》 · 学习 ${d.book.topic} · 已解锁第 ${d.progress.current_chapter}/${d.book.planned_chapters} 章` + (d.book.status==='completed' ? ' · 已完结' : '');
+  show('reading');
+  // 显示最新已解锁章节内容（若有）
+  if (d.progress.current_chapter > 0) {
+    const c = await api(`/api/books/${id}/chapters/${d.progress.current_chapter}`);
+    renderChapter(c.chapter);
+    $('actionCard').classList.remove('hidden');
+    $('quizCard').classList.add('hidden');
+  } else {
+    $('chapterHead').innerHTML = '';
+    $('chapterBody').innerHTML = '<p class="muted">点击「读下一章」开始。</p>';
+    $('actionCard').classList.remove('hidden');
+    $('quizCard').classList.add('hidden');
+  }
+}
+
+// ---------- 读下一章 ----------
+$('nextBtn').addEventListener('click', async () => {
+  try {
+    $('nextBtn').disabled = true;
+    const r = await api(`/api/books/${state.bookId}/chapters/next`, 'POST');
+    if (r.chapter) { renderChapter(r.chapter); }
+    else {
+      await poll(r.task_id, '正在生成第 ' + r.chapter_no + ' 章…');
+      const c = await api(`/api/books/${state.bookId}/chapters/${r.chapter_no}`);
+      renderChapter(c.chapter);
+    }
+    toast('');
+  } catch (e) { toast(e.message, 'err'); }
+  finally { $('nextBtn').disabled = false; }
+});
+
+// ---------- 渲染章节 ----------
+function renderChapter(ch) {
+  state.chapter = ch;
+  const head = `第 ${ch.chapter_no} 章《${ch.title}》` + (ch.is_ending ? '（大结局）' : '') +
+    '　<span class="muted">' + (ch.content||'').replace(/[^\n]/g,'').length + ' 字</span>';
+  $('chapterHead').innerHTML = '<h2>' + head + '</h2>';
+  $('chapterBody').textContent = ch.content || '';
+
+  if (ch.is_ending) {
+    $('quizCard').classList.add('hidden');
+    $('actionCard').classList.remove('hidden');
+    $('nextBtn').disabled = true;
+    $('finalizeBtn').disabled = true;
+    refreshGalleryBtn();
+    return;
+  }
+  $('nextBtn').disabled = false;
+  $('finalizeBtn').disabled = false;
+  renderQuiz(ch.questions || []);
+  $('quizCard').classList.remove('hidden');
+  $('quizFeedback').innerHTML = '';
+}
+
+function renderQuiz(qs) {
+  $('quizList').innerHTML = qs.map((q,i) => `
+    <div class="quiz-q">
+      <div class="qtext">${i+1}. ${q.question}</div>
+      ${q.options.map((o,j) => `
+        <label class="opt"><input type="radio" name="q${i}" value="${j}"> ${o}</label>`).join('')}
+    </div>`).join('');
+}
+
+// ---------- 提交答案 ----------
+$('submitBtn').addEventListener('click', async () => {
+  const qs = state.chapter.questions || [];
+  const answers = [];
+  for (let i=0;i<qs.length;i++) {
+    const sel = document.querySelector(`input[name="q${i}"]:checked`);
+    if (sel == null) { toast('请答完所有题目', 'warn'); return; }
+    answers.push(parseInt(sel.value));
+  }
+  try {
+    const r = await api(`/api/books/${state.bookId}/chapters/${state.chapter.chapter_no}/submit`, 'POST', { answers });
+    const fb = $('quizFeedback');
+    if (r.passed) {
+      fb.innerHTML = `<p class="ok">✅ ${r.message}</p>`;
+      refreshMeta();
+      $('quizCard').classList.add('hidden');
+    } else {
+      const hints = (r.hints||[]).map(h=>`<div>${h}</div>`).join('');
+      fb.innerHTML = `<p class="warn">${r.message}</p><div class="hint">${hints}</div>` +
+        (r.action ? `<div style="margin-top:10px"><button class="ghost" id="regenBtn">换一套题重答（${r.action}）</button></div>` : '');
+      const rb = $('regenBtn');
+      if (rb) rb.addEventListener('click', () => regenerate(r.action));
+    }
+  } catch (e) { toast(e.message, 'err'); }
+});
+
+async function regenerate(action) {
+  try {
+    const hint = action==='retry_new_questions' ? '适中难度，与原文一致'
+      : action==='retry_lower_difficulty' ? '偏简单，答案尽量能在原文直接找到'
+      : '最易：纯定位题，答案直接在原文里，一眼能看到';
+    const r = await api(`/api/books/${state.bookId}/chapters/${state.chapter.chapter_no}/regenerate`, 'POST', { difficulty_hint: hint });
+    await poll(r.task_id, '正在换题…');
+    const c = await api(`/api/books/${state.bookId}/chapters/${state.chapter.chapter_no}`);
+    state.chapter.questions = c.chapter.questions;
+    renderQuiz(c.chapter.questions);
+    $('quizFeedback').innerHTML = '<p class="ok">已换新题，重新作答。</p>';
+    toast('');
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+// ---------- 完结 ----------
+$('finalizeBtn').addEventListener('click', async () => {
+  try {
+    $('finalizeBtn').disabled = true;
+    const r = await api(`/api/books/${state.bookId}/finalize`, 'POST');
+    await poll(r.task_id, '正在生成大结局…');
+    const d = await api('/api/books/' + state.bookId);
+    const last = d.progress.current_chapter; // 结局章编号 = 原最新 + 1
+    const c = await api(`/api/books/${state.bookId}/chapters/${last + 1}`);
+    renderChapter(c.chapter);
+    toast('✅ 全书已完结，结局已收入画廊');
+    refreshMeta();
+  } catch (e) { toast(e.message, 'err'); }
+  finally { $('finalizeBtn').disabled = false; }
+});
+
+// ---------- 画廊 ----------
+$('galleryBtn').addEventListener('click', showGallery);
+$('galleryBack').addEventListener('click', () => show('reading'));
+async function showGallery() {
+  const d = await api(`/api/books/${state.bookId}/endings`);
+  $('galleryList').innerHTML = d.endings.map(e => `
+    <div class="gallery-item">
+      <span>${e.unlocked ? '✅' : '🔒'} ${e.desc}</span>
+      ${e.unlocked ? '' : `<button class="ghost" onclick="rewalk('${e.style}')">重走此结局</button>`}
+    </div>`).join('');
+  show('gallery');
+}
+async function rewalk(style) {
+  try {
+    const r = await api(`/api/books/${state.bookId}/endings/${style}`, 'POST');
+    await poll(r.task_id, '正在生成该结局…');
+    showGallery();
+    toast('✅ 已解锁新结局');
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function refreshMeta() {
+  const d = await api('/api/books/' + state.bookId);
+  $('bookMeta').textContent = `#${d.book.id} 《${d.book.title||d.book.topic+'之旅'}》 · 学习 ${d.book.topic} · 已解锁第 ${d.progress.current_chapter}/${d.book.planned_chapters} 章` + (d.book.status==='completed' ? ' · 已完结' : '');
+}
+function refreshGalleryBtn() { $('galleryBtn').classList.remove('hidden'); }
+
+// 初始
+show('gate');
+</script>
+</body>
+</html>

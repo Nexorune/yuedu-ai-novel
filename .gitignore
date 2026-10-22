@@ -1,0 +1,35 @@
+.env
+.env.*
+!.env.example
+.venv/
+__pycache__/
+.pytest_cache/
+node_modules/
+.next/
+data/
+.vefaas/
+.DS_Store
+
+# 本机备份、环境和运行记录不上传 GitHub
+.venv.*/
+备份/
+*.log
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.bak
+*.pem
+*.key
+.coverage
+htmlcov/
+.ruff_cache/
+.mypy_cache/
+*.tsbuildinfo
+
+# 验收原始截图可能包含个人账号或生成内容；保留文字说明
+docs/evidence/**/*.png
+docs/evidence/**/*.jpg
+docs/evidence/**/*.jpeg
+docs/evidence/**/*.webp
+docs/evidence/**/*.mp4
