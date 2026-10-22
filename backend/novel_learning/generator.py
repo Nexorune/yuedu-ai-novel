@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import random
+import re
 
 from . import config, db, llm, prompts, security
 from .models import ENDING_STYLES, StoryBible
@@ -87,11 +88,19 @@ def _review_continuity(content: str, bible: StoryBible) -> tuple[bool, str]:
 
 
 def _review_learning_questions(topic: str, knowledge_points: list[dict],
-                               questions: list[dict], character_names: list[str] | None = None) -> tuple[bool, str]:
+                               questions: list[dict], character_names: list[str] | None = None,
+                               content: str = "") -> tuple[bool, str]:
     if not validate_learning_questions(topic, questions, character_names):
-        return False, "题目在考小说剧情或虚构设定，请改考学习知识"
-    system, user = prompts.learning_questions_review_prompt(topic, knowledge_points, questions, character_names)
-    result = llm.call_json(system, user, max_tokens=config.MAX_TOKENS_REVIEW, temperature=0.0)
+        return False, "题目里出现了「第几段」这类纯位置题，请改问内容本身"
+    system, user = prompts.learning_questions_review_prompt(
+        topic, knowledge_points, questions, character_names, content)
+    try:
+        result = llm.call_json(system, user, max_tokens=config.MAX_TOKENS_REVIEW, temperature=0.0,
+                               model=config.QUESTIONS_MODEL_ID)
+    except (RuntimeError, ValueError) as exc:
+        # 审题本身失败不该毁掉整章：接地校验才是硬门槛，这里退化成放行并记日志
+        LOG.warning("审题调用失败，跳过语义复审：%s", exc)
+        return True, ""
     if not isinstance(result.get("relevant"), bool):
         return False, "审题结果不合法"
     issues = result.get("issues", [])
@@ -152,6 +161,10 @@ def generate_chapter(book_id: int, chapter_no: int, bible: StoryBible,
             continue
 
         content = data.get("content") if isinstance(data.get("content"), str) else ""
+        # 标注缺失属于格式小问题，补上即可；不值得为它整章重写（重写一次几十秒）
+        if content and "AI 生成内容" not in content:
+            content = "（AI 生成内容）\n" + content
+            data["content"] = content
         _assign_paragraphs(content, data)
         # 1) 内容审核
         _emit(on_progress, "内容安全审核中…")
@@ -167,13 +180,14 @@ def generate_chapter(book_id: int, chapter_no: int, bible: StoryBible,
             LOG.warning("第 %s 章本地校验不通过（第 %d 次）: %s", chapter_no, attempt + 1, problems)
             user += f"\n\n上一版校验不通过（{problems}），请按硬性要求重写。"
             continue
-        # 3) 独立出题（正文与题目分开生成，更可靠）
+        # 3) 独立出题（正文与题目分开生成，题目必须落到正文原句上）
         _emit(on_progress, "正文完成，正在独立出题…")
         try:
             data["questions"] = _generate_learning_questions(
                 book["topic"], data["knowledge_points"],
                 [character.get("name", "") for character in bible.characters],
-                "适中；只考知识点的概念、理解和现实应用")
+                "适中；必须贴着本章正文出，读完这一章就能答",
+                content)
         except GenerationError as exc:
             LOG.warning("第 %s 章独立出题失败（第 %d 次）: %s", chapter_no, attempt + 1, exc)
             continue
@@ -212,10 +226,13 @@ def generate_chapter(book_id: int, chapter_no: int, bible: StoryBible,
     after_chapter(bible, chapter)
 
     security.bump_daily_count(book_id)
-    _emit(on_progress, "章节已保存")
-    LOG.info("第 %s 章《%s》生成成功（%d 字，%d 题）",
+    grounded = sum(1 for q in chapter["questions"] if q.get("grounded"))
+    total_q = len(chapter["questions"]) or 1
+    _emit(on_progress, f"章节已保存（题目接地 {grounded}/{total_q}）")
+    LOG.info("第 %s 章《%s》生成成功（%d 字，%d 题，接地率 %d/%d）",
              chapter_no, chapter["title"],
-             len(chapter["content"].replace("\n", "")), len(chapter["questions"]))
+             len(chapter["content"].replace("\n", "")), len(chapter["questions"]),
+             grounded, total_q)
     return chapter
 
 
@@ -250,39 +267,63 @@ def regenerate_questions(chapter: dict, difficulty_hint: str) -> list[dict]:
     topic = db.get_book(chapter["book_id"])["topic"]
     from .story_bible import load_or_create
     character_names = [c.get("name", "") for c in load_or_create(chapter["book_id"]).characters]
-    qs = _generate_learning_questions(topic, chapter["knowledge_points"], character_names, difficulty_hint)
+    qs = _generate_learning_questions(topic, chapter["knowledge_points"], character_names,
+                                      difficulty_hint, chapter.get("content", ""))
     db.replace_questions(chapter["book_id"], chapter["chapter_no"], qs)
     chapter["questions"] = qs
     return qs
 
 
 def _generate_learning_questions(topic: str, knowledge_points: list[dict],
-                                 character_names: list[str], difficulty_hint: str) -> list[dict]:
-    system, user = prompts.questions_regenerate_prompt(topic, knowledge_points, difficulty_hint)
-    qs = []
-    problems = []
+                                 character_names: list[str], difficulty_hint: str,
+                                 content: str = "") -> list[dict]:
+    """出题 + 接地校验：每题必须交一句能在正文里逐字搜到的原话。
+
+    重试原则：只有结构完整（5 题、4 选项、answer 合法）的结果才留着备用。
+    后面某次重试崩了，也不能把前面已经拿到的好结果一起扔掉。
+    """
+    system, user = prompts.questions_regenerate_prompt(topic, knowledge_points, difficulty_hint, content)
+    qs: list[dict] = []
+    problems: list[str] = []
+    best: list[dict] | None = None
+    best_problems: list[str] = []
+    best_grounded = -1
     for _attempt in range(config.REWRITE_LIMIT + 1):
         try:
-            data = llm.call_json(system, user, max_tokens=config.MAX_TOKENS_CHAPTER // 2,
-                                 temperature=0.3)
+            data = llm.call_json(system, user, max_tokens=config.MAX_TOKENS_QUESTIONS,
+                                 temperature=0.3, model=config.QUESTIONS_MODEL_ID)
         except (RuntimeError, ValueError) as exc:
-            LOG.warning("换题调用或解析失败（第 %d 次）：%s", _attempt + 1, exc)
+            LOG.warning("出题调用或解析失败（第 %d 次）：%s", _attempt + 1, exc)
             problems = ["模型输出未能解析为题目 JSON"]
-            user += "\n上一版不是有效 JSON。请只输出完整合法的 JSON，不要省略字段。"
+            user += "\n上一版不是有效 JSON。请只输出完整合法的 JSON，不要省略字段，也不要写任何解释。"
             continue
         qs = data.get("questions", [])
         _normalize_answer_indices(qs)
         problems = _validate_questions(qs)
+        if problems:
+            LOG.warning("出题结构不合格（第 %d 次）：%s", _attempt + 1, problems)
+            user += f"\n上一版测验结构不合格（{problems}）。请逐条修正后重出。"
+            continue
+        problems = _check_grounding(content, qs)
         if not problems:
-            relevant, issue = _review_learning_questions(topic, knowledge_points, qs, character_names)
+            relevant, issue = _review_learning_questions(
+                topic, knowledge_points, qs, character_names, content)
             if not relevant:
-                problems.append(issue or "测验偏离学习主题")
+                problems.append(issue or "测验与本章正文对不上")
+        grounded = sum(1 for q in qs if q.get("grounded"))
+        if grounded > best_grounded:
+            best, best_problems, best_grounded = qs, list(problems), grounded
         if not problems:
             break
-        LOG.warning("换题生成不合法：%s", problems)
-        user += f"\n上一版测验不合格（{problems}）。请重出与学习知识有关的题目。"
+        LOG.warning("出题不合格（第 %d 次）：%s", _attempt + 1, problems)
+        user += f"\n上一版测验不合格（{problems}）。请逐条修正后重出。"
     if problems:
-        raise GenerationError(f"换题失败：{problems}")
+        if best is None:
+            raise GenerationError(f"出题失败：{problems}")
+        # 结构没问题、只是这次没达标：保住已有结果如实交付，不卡住用户
+        LOG.warning("重出未达标，按已有结果交付（接地 %d/%d）：%s",
+                    best_grounded, len(best), best_problems)
+        qs = best
     shuffle_options(qs)
     return qs
 
@@ -305,7 +346,7 @@ def shuffle_options(questions: list[dict], rng: random.Random | None = None) -> 
 
 
 def _validate_questions(qs: list[dict]) -> list[str]:
-    """校验换题结果（与章节题同标准）。"""
+    """校验题目结构（接地与否由 _check_grounding 单独负责）。"""
     problems: list[str] = []
     if not isinstance(qs, list):
         return ["题目必须是数组"]
@@ -325,8 +366,8 @@ def _validate_questions(qs: list[dict]) -> list[str]:
             continue
         if type(ans) is not int or ans < 0 or ans >= len(opts):
             problems.append(f"题「{label}」answer 越界")
-        if type(q.get("source_paragraph")) is not int or q["source_paragraph"] < 1:
-            problems.append(f"题「{label}」缺 source_paragraph")
+        if not isinstance(q.get("evidence"), str) or not q["evidence"].strip():
+            problems.append(f"题「{label}」缺 evidence（必须从正文逐字复制的原句）")
     return problems
 
 
@@ -340,32 +381,95 @@ def _normalize_answer_indices(questions: list[dict]) -> None:
         answer = question.get("answer")
         if isinstance(answer, str) and answer.strip().upper() in "ABCD" and len(answer.strip()) == 1:
             question["answer"] = "ABCD".index(answer.strip().upper())
-        paragraph = question.get("source_paragraph")
-        if isinstance(paragraph, str) and paragraph.isdecimal():
-            question["source_paragraph"] = int(paragraph)
-        # 讲解是加分项：缺失或格式不对就去掉，不因此判整套题不合格
+        # 讲解与出处是加分项：格式不对就清理，不因此判整套题不合格
         explanation = question.get("explanation")
         if isinstance(explanation, str) and explanation.strip():
             question["explanation"] = explanation.strip()[:120]
         else:
             question.pop("explanation", None)
+        evidence = question.get("evidence")
+        if isinstance(evidence, str) and evidence.strip():
+            question["evidence"] = evidence.strip().strip("「」\"'“”")
+        else:
+            question.pop("evidence", None)
+
+
+# 接地校验：原句必须能在正文里逐字找到，且落在一段之内（防止模型拼接两句）
+_STRIP_CHARS = re.compile(r"[\s\u3000，。、；：！？…—－·“”‘’（）《》〈〉「」『』,.;:!?\"'()\[\]<>/\\|*#]+")
+_WATERMARK = re.compile(r"^[（(]\s*AI\s*生成内容\s*[）)]$")
+_PARA_PREFIX = re.compile(r"^第\s*\d+\s*段\s*[:：]?\s*")
+MIN_EVIDENCE_CHARS = 10
+
+
+def _norm_text(text: str) -> str:
+    return _STRIP_CHARS.sub("", text or "")
+
+
+def _paragraphs(content: str) -> list[str]:
+    """切成读者眼里的段落：跳过「（AI 生成内容）」水印行，剥掉「第N段：」前缀。"""
+    result: list[str] = []
+    for raw in content.split("\n"):
+        line = raw.strip()
+        if not line or _WATERMARK.match(line):
+            continue
+        line = _PARA_PREFIX.sub("", line).strip()
+        if line:
+            result.append(line)
+    return result
+
+
+def _locate_quote(content: str, quote: str) -> int | None:
+    """把一句原话定位到正文第几段；找不到返回 None。
+
+    忽略空白与标点差异；允许跨越相邻两段（对话常被拆成多行），
+    此时返回这句话开始的那一段。
+    """
+    target = _norm_text(quote)
+    if len(target) < MIN_EVIDENCE_CHARS:
+        return None
+    paragraphs = _paragraphs(content)
+    if not paragraphs:
+        return None
+    flat = ""
+    starts: list[int] = []
+    for paragraph in paragraphs:
+        starts.append(len(flat))
+        flat += _norm_text(paragraph)
+    position = flat.find(target)
+    if position < 0:
+        return None
+    index = 0
+    for i, start in enumerate(starts):
+        if start <= position:
+            index = i
+        else:
+            break
+    return index + 1
+
+
+def _check_grounding(content: str, questions: list[dict]) -> list[str]:
+    """逐题核对 evidence 是否真在正文里，并把真实段号写回 source_paragraph。"""
+    problems: list[str] = []
+    if not content.strip():
+        return ["正文为空，无法核对题目依据"]
+    for number, question in enumerate(questions, 1):
+        label = str(question.get("question") or "")[:14]
+        paragraph = _locate_quote(content, question.get("evidence") or "")
+        if paragraph is None:
+            question["grounded"] = False
+            question["source_paragraph"] = None
+            problems.append(
+                f"第{number}题「{label}」的 evidence 在正文里搜不到，必须一字不改地复制正文原句（12–50 字，不能拼接两段）")
+        else:
+            question["grounded"] = True
+            question["source_paragraph"] = paragraph
+    return problems
 
 
 def _assign_paragraphs(content: str, data: dict) -> None:
-    """段落定位由代码确定性完成，不依赖模型数段号。
-
-    正文通常含「第N段」标记；按标记数求总段数，再把知识点与题目
-    均匀散布到各段，保证「回看第 X 段」提示指向大致正确的区域。
-    """
-    import re as _re
-    markers = [int(x) for x in _re.findall(r"第\s*(\d+)\s*段", content)]
-    total = max(markers) if markers else max(1, len([p for p in content.split("\n") if p.strip()]))
-    kps = data.get("knowledge_points") or []
-    for i, kp in enumerate(kps):
-        if isinstance(kp, dict):
-            kp["paragraph"] = max(1, min(total, total * (i + 1) // 4))
-    qs = data.get("questions") or []
-    n = max(1, len(qs))
-    for i, q in enumerate(qs):
-        if isinstance(q, dict):
-            q["source_paragraph"] = max(1, min(total, total * (i + 1) // (n + 1)))
+    """知识点段落位置：按 quote 在正文里反查真实段号，不再平均分配。"""
+    for kp in data.get("knowledge_points") or []:
+        if not isinstance(kp, dict):
+            continue
+        paragraph = _locate_quote(content, kp.get("quote") or "")
+        kp["paragraph"] = paragraph or 1

@@ -18,13 +18,17 @@ DB_PATH = DATA_DIR / "novel_learning.db"
 
 # 模型配置
 MODEL_ID = os.getenv("MODEL_ID", "deepseek-chat")
+# 出题单独用一个小快模型：结构化短输出，推理型模型会先烧上万 token，慢十倍
+QUESTIONS_MODEL_ID = os.getenv("QUESTIONS_MODEL_ID", "") or MODEL_ID
 API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 BASE_URL = os.getenv("ANTHROPIC_BASE_URL", "")
 
 # 生成护栏
 MAX_TOKENS_CHAPTER = int(os.getenv("CHAPTER_MAX_TOKENS", "8192"))
 MAX_TOKENS_OUTLINE = int(os.getenv("OUTLINE_MAX_TOKENS", "2048"))
-MAX_TOKENS_REVIEW = int(os.getenv("REVIEW_MAX_TOKENS", "512"))
+MAX_TOKENS_REVIEW = int(os.getenv("REVIEW_MAX_TOKENS", "1024"))
+# 出题要带原句 evidence 与讲解，且部分模型会先推理再输出 JSON，预算给足
+MAX_TOKENS_QUESTIONS = int(os.getenv("QUESTIONS_MAX_TOKENS", "8192"))
 TIMEOUT_SECONDS = float(os.getenv("TIMEOUT_SECONDS", "120"))
 MAX_RETRIES = int(os.getenv("MAX_RETRIES", "3"))
 REWRITE_LIMIT = int(os.getenv("REWRITE_LIMIT", "2"))  # 审核/校验不通过的重写上限

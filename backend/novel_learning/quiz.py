@@ -10,16 +10,16 @@ LOG = logging.getLogger("novel_learning.quiz")
 
 def validate_learning_questions(topic: str, questions: list[dict],
                                 character_names: list[str] | None = None) -> bool:
-    """拦截明显的剧情记忆题；语义审查由生成管线的模型复审完成。"""
+    """只拦纯位置题（问「第几段」）；题目是否接地由 evidence 逐字校验负责。
+
+    题目里出现人物、情节是本产品的正常要求——要考的就是「这一章读懂了没有」。
+    """
     if not topic.strip() or not questions:
         return False
-    story_cues = ("根据正文", "根据故事", "根据原文", "文中", "故事中", "正文里",
-                  "被称为什么", "被称为", "叫什么名字", "主角做了什么", "谁做了什么",
-                  "主要依靠的是什么", "主要依靠什么", "做了什么", "发生了什么")
-    names = [name for name in (character_names or []) if len(name) >= 2]
+    location_cues = ("第几段", "哪一段", "哪个段落", "第几自然段", "文中第")
     for question in questions:
-        stem = question.get("question", "")
-        if any(cue in stem for cue in story_cues) or any(name in stem for name in names):
+        stem = str(question.get("question", ""))
+        if any(cue in stem for cue in location_cues):
             return False
     return True
 
@@ -38,6 +38,7 @@ def grade(questions: list[dict], answers: list[int]) -> dict:
             "correct": right,
             "answer": q.get("answer"),
             "source_paragraph": q.get("source_paragraph"),
+            "evidence": q.get("evidence"),
         })
     passed = correct >= config.PASS_THRESHOLD
     return {"correct": correct, "total": len(questions),
@@ -64,11 +65,15 @@ def submit_answers(book_id: int, chapter: dict, answers: list[int]) -> dict:
     fails = p["consecutive_fails"] + 1
     db.set_progress(book_id, consecutive_fails=fails)
 
-    # 错题定位提示
+    # 错题定位提示：段号来自原句在正文里的真实位置，不再是估算值
     hints = []
     for r in result["results"]:
-        if not r["correct"]:
+        if r["correct"]:
+            continue
+        if r.get("source_paragraph"):
             hints.append(f"· 「{r['question'][:30]}…」→ 回看第 {r['source_paragraph']} 段")
+        else:
+            hints.append(f"· 「{r['question'][:30]}…」→ 看这道题的讲解")
 
     feedback = {
         "passed": False,
@@ -125,6 +130,7 @@ def reveal(chapter: dict, index: int, choice: int) -> dict:
         "explanation": question.get("explanation") or "",
         "knowledge": knowledge.get("point", "") if knowledge else "",
         "source_paragraph": question.get("source_paragraph"),
+        "evidence": question.get("evidence") or "",
     }
 
 

@@ -16,15 +16,15 @@ FAKE_OUTLINE = {
 
 FAKE_CHAPTER = {
     "knowledge_points": [
-        {"role": "core", "point": "核心概念", "paragraph": 1},
-        {"role": "aux", "point": "辅助A", "paragraph": 2},
-        {"role": "aux", "point": "辅助B", "paragraph": 3},
+        {"role": "core", "point": "核心概念", "quote": "第1段正文。第1段正文。"},
+        {"role": "aux", "point": "辅助A", "quote": "第1段正文。第1段正文。第1段正文。"},
+        {"role": "aux", "point": "辅助B", "quote": "第1段正文。第1段正文。第1段正文。"},
     ],
     "title": "第一章",
     "content": "（AI 生成内容）\n" + "第1段正文。" * 400,
     "questions": [
         {"type": "memory", "question": f"题{i}", "options": ["A", "B", "C", "D"],
-         "answer": 0, "source_paragraph": i + 1, "difficulty": "easy"} for i in range(5)
+         "answer": 0, "evidence": "第1段正文。第1段正文。", "difficulty": "easy"} for i in range(5)
     ],
 }
 
@@ -32,8 +32,10 @@ FAKE_CHAPTER = {
 def _fake_call_json(system, user, **kwargs):
     if "请审核" in user:
         return {"safe": True, "reason": ""}
-    if "学习测验审题员" in user:
+    if "审题员" in user:
         return {"relevant": True, "issues": []}
+    if "阅读测验题" in user:
+        return {"questions": FAKE_CHAPTER["questions"]}
     if "全书大纲" in user or "大纲" in user:
         return FAKE_OUTLINE
     return FAKE_CHAPTER

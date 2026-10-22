@@ -110,9 +110,9 @@ def chapter_prompt(genre: str, topic: str, chapter_no: int, total_chapters: int,
 严格输出如下 JSON（本步只写正文与知识点，题目另一步生成）：
 {{
   "knowledge_points": [
-    {{"role": "core", "point": "核心知识点一句话", "paragraph": 1}},
-    {{"role": "aux", "point": "辅助知识点一句话", "paragraph": 1}},
-    {{"role": "aux", "point": "辅助知识点一句话", "paragraph": 1}}
+    {{"role": "core", "point": "核心知识点一句话", "quote": "正文里把这个知识点说出口的那句原话（逐字复制，12–40 字）"}},
+    {{"role": "aux", "point": "辅助知识点一句话", "quote": "正文里的原话（逐字复制，12–40 字）"}},
+    {{"role": "aux", "point": "辅助知识点一句话", "quote": "正文里的原话（逐字复制，12–40 字）"}}
   ],
   "title": "本章标题",
   "content": "正文，必须标注开头「（AI 生成内容）」，按「第1段\\n第2段\\n…」分好段，总字数严格控制在 {min_words}–{max_words} 个中文字符"
@@ -120,10 +120,12 @@ def chapter_prompt(genre: str, topic: str, chapter_no: int, total_chapters: int,
 
 硬性要求：
 1. 知识点必须是 1 个 core + 2 个 aux，共 3 个；正文要真正解释核心知识的含义与用法，给出一个可迁移到现实的例子；不能只把知识词汇当作世界观装饰。辅助知识点也要给出准确的定义或辨析。先核查概念事实（例如长方体是立体图形，不是平面图形）。
-2. paragraph 直接填数字 1 即可（段落定位由系统后处理完成），绝对禁止用 x、-、—、|、罗马数字、文字、代码或留空代替数字。
-3. 正文字数必须落在 {min_words}–{max_words} 个中文字符之间：宁短勿长，写完先自查一遍字数，超过 {max_words} 字就删减，不足 {min_words} 字就扩写。
-4. 人物姓名、身份、关系必须与人物卡完全一致；剧情必须承接前情摘要。
-5. 正文里不得出现暴力、色情、违法、危险模仿内容。"""
+2. 每个知识点必须在正文里「说出口」：由人物对话、内心独白或叙述明确讲出这个概念的含义或用法，让读者读到那一句就懂。三个知识点要分散在不同段落，不要挤在一起。
+3. 禁止整段教科书式罗列，也不要让角色突然背定义：要用具体处境把这句话自然带出来（算账、争论、指点、后悔都行）。
+4. quote 必须是正文里原样存在的一句话，一字不改、不改标点、不拼接两段。系统会拿它到正文里逐字搜索，搜不到就判废重写。不要输出 paragraph，段落位置由系统按 quote 自动定位。
+5. 正文字数必须落在 {min_words}–{max_words} 个中文字符之间：宁短勿长，写完先自查一遍字数，超过 {max_words} 字就删减，不足 {min_words} 字就扩写。
+6. 人物姓名、身份、关系必须与人物卡完全一致；剧情必须承接前情摘要。
+7. 正文里不得出现暴力、色情、违法、危险模仿内容。"""
     return system, user
 
 
@@ -172,17 +174,32 @@ def continuity_prompt(content: str, bible: StoryBible) -> tuple[str, str]:
 
 
 def learning_questions_review_prompt(topic: str, knowledge_points: list[dict],
-                                     questions: list[dict], character_names: list[str] | None = None) -> tuple[str, str]:
+                                     questions: list[dict], character_names: list[str] | None = None,
+                                     content: str = "") -> tuple[str, str]:
+    """审题：这批题是否真的和本章正文对得上、答案有没有和原文矛盾。"""
     import json
     system = SYSTEM_BASE
     points = [kp.get("point", "") for kp in knowledge_points]
-    user = f"""你是学习测验审题员。学习主题：{topic}。本章知识点：{json.dumps(points, ensure_ascii=False)}。小说角色：{json.dumps(character_names or [], ensure_ascii=False)}。
-请逐题检查以下题目及正确答案：{json.dumps(questions, ensure_ascii=False)}
-合格标准：题干直接考知识点的概念、原理、辨析或现实场景应用；把小说正文完全拿走后，题目仍能独立回答。
-只要题干问小说角色在某场景做了什么、依靠什么、为什么这样做，或包含虚构世界的称号/指标，即使正确选项提到真实知识，也必须判不合格。
-例：「叶辰在采石场主要依靠什么提高算绩？」→ 不合格（问角色剧情，算绩是虚构指标）；「把独立计算任务分给多个处理器，利用了什么？」→ 合格。
-判定规则：所有题都合格时，relevant 为 true、issues 为空数组；存在不合格题时，relevant 为 false，issues 只列不合格的题号和原因。不要在 issues 中写合格题或推理过程。
-只输出 JSON：{{"relevant": true, "issues": []}} 或 {{"relevant": false, "issues": ["第N题：原因"]}}。不要迁就表面上出现学习主题词的剧情题。"""
+    user = f"""你是阅读理解题的审题员。学习主题：{topic}。本章知识点：{json.dumps(points, ensure_ascii=False)}。
+
+【本章正文】
+\"\"\"
+{content.strip() or "（正文缺失）"}
+\"\"\"
+
+【待审题目】
+{json.dumps(questions, ensure_ascii=False)}
+
+逐题检查这四件事：
+1. evidence 是否真的出自上面正文，且意思与该题考的东西一致；
+2. 题目给出的正确答案是否和正文内容矛盾（正文没写过的数字、结论一律算矛盾）；
+3. 题干是否把答案写出来了（读题干就能猜对的算不合格）；
+4. 是否 4 个选项、且只有一个正确。
+
+注意：本产品的题目就是要考「这一章你读懂没有」，题目里出现人物、情节、原文细节是正常的、要求的，不要因此判不合格。只有当题目问「这在第几段」这种纯位置题时才算不合格。
+
+判定规则：全部合格时 relevant 为 true、issues 为空数组；存在不合格题时 relevant 为 false，issues 只列不合格题的题号和原因，不要写合格题，也不要写推理过程。
+只输出 JSON：{{"relevant": true, "issues": []}} 或 {{"relevant": false, "issues": ["第N题：原因"]}}。"""
     return system, user
 
 
@@ -207,22 +224,39 @@ def ending_prompt(genre: str, topic: str, chapter_no: int, min_words: int,
 
 
 def questions_regenerate_prompt(topic: str, knowledge_points: list[dict],
-                                difficulty_hint: str) -> tuple[str, str]:
+                                difficulty_hint: str, content: str = "") -> tuple[str, str]:
+    """出题：必须贴着本章正文出，每题交一句逐字复制的原文依据。"""
     system = SYSTEM_BASE
-    kps = "\n".join(f"  - [{kp.get('role')}] 第{kp.get('paragraph')}段：{kp.get('point')}" for kp in knowledge_points)
-    user = f"""请仅根据知识点清单，为学习主题「{topic}」出 {config_questions()} 道测验题。小说正文不提供给你，不能编造故事人物和剧情。
+    kps = "\n".join(
+        f"  - [{kp.get('role')}] 第{kp.get('paragraph') or '?'}段 知识点：{kp.get('point')}"
+        + (f"｜正文原句：「{kp.get('quote')}」" if kp.get("quote") else "")
+        for kp in knowledge_points)
+    body = content.strip() or "（正文缺失）"
+    user = f"""你在给一章小说出阅读测验题。学习主题：{topic}。
 
-本章知识点：
+【本章正文】
+\"\"\"
+{body}
+\"\"\"
+
+【本章讲到的知识点】
 {kps}
 
 难度要求：{difficulty_hint}
 
-请只围绕上述知识点出题，输出 JSON：
+请出 {config_questions()} 道题，输出 JSON：
 {{"questions": [
-  {{"type": "memory", "question": "题干", "options": ["选项甲","选项乙","选项丙","选项丁"], "answer": 0, "source_paragraph": 1, "difficulty": "easy", "explanation": "一句话讲解为什么选这个"}}
+  {{"type": "understanding", "question": "题干", "options": ["选项甲","选项乙","选项丙","选项丁"], "answer": 0, "evidence": "从上面正文里逐字复制的一句原话（12–50 字）", "difficulty": "easy", "explanation": "一句话讲清正确选项为什么对（不超过 60 字）"}}
 ]}}
 
-规则：核心知识点 3 道（memory/understanding/transfer），2 个辅助知识点各 1 道 locate，共 5 道；每题 4 选项；answer 必须是 0、1、2、3 中的整数，不能写字母或文字；source_paragraph 直接填 1 即可（段落定位由系统后处理）。locate 题也要考该知识点本身，不问「文中哪一段」或情节位置。只考概念、简单计算、辨析或现实场景应用；禁止考人物姓名、剧情、虚构称号或谁做了什么。每题脱离小说也可回答。每题必须带 explanation：用一句话（不超过 60 字）讲清正确选项为什么对、点出知识点本身，不提剧情和人物，用户答完这道题后才会看到。"""
+规则（违反任意一条都算不合格，会被退回重出）：
+1. 每道题都必须能在这章正文里找到依据：正确选项的信息必须出现在正文中。读者读完这章应该答得出，没读过的人应该答不出。
+2. 每题必须给 evidence：从正文里逐字复制的一句原话（12–50 字），一字不改、不改标点、不拼接两段。系统会拿它去正文里逐字搜索，搜不到整题判废。
+3. 可以这样问：这句话、这个选择体现了什么概念；人物为什么这样做；按文中给出的数字算出来是多少；文中对某个说法怎么辨析。不要问「这在第几段」「文中哪一段」这类纯位置题。
+4. 每题 4 个选项，只有一个正确；错误选项要像真的，不能一眼看出错；题干不能泄露答案。
+5. answer 必须是 0、1、2、3 中的整数，不能写字母或文字。
+6. explanation 用一句话（不超过 60 字）讲清正确选项为什么对，用户答完才展示。
+7. {config_questions()} 道题的 evidence 来自正文不同段落，不要都堆在同一段；整体覆盖本章 3 个知识点，核心知识点至少 3 道。"""
     return system, user
 
 

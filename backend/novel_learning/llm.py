@@ -28,14 +28,16 @@ def _get_client() -> Anthropic:
     return _client
 
 
-def call(system: str, user: str, max_tokens: int, temperature: float = 0.8) -> str:
-    """调模型，返回纯文本；瞬时错误自动退避重试。"""
+def call(system: str, user: str, max_tokens: int, temperature: float = 0.8,
+         model: str | None = None) -> str:
+    """调模型，返回纯文本；瞬时错误自动退避重试。model 为空时用全局 MODEL_ID。"""
     client = _get_client()
+    model_id = model or config.MODEL_ID
     last_error: Exception | None = None
     for attempt in range(config.MAX_RETRIES):
         try:
             resp = client.messages.create(
-                model=config.MODEL_ID,
+                model=model_id,
                 system=system,
                 max_tokens=max_tokens,
                 temperature=temperature,
@@ -100,7 +102,8 @@ def _repair_json_text(text: str) -> str:
     return text
 
 
-def call_json(system: str, user: str, max_tokens: int, temperature: float = 0.8) -> dict:
+def call_json(system: str, user: str, max_tokens: int, temperature: float = 0.8,
+              model: str | None = None) -> dict:
     """调模型并解析为 JSON dict。"""
-    text = call(system, user, max_tokens=max_tokens, temperature=temperature)
+    text = call(system, user, max_tokens=max_tokens, temperature=temperature, model=model)
     return _extract_json(text)
