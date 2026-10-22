@@ -90,6 +90,20 @@ body {
   box-shadow: inset 6px 7px 18px #6f514513, inset -3px -3px 10px #fff9;
 }
 .site-shell > .site-footer { grid-column: 2; width: 100%; max-width: none; padding: 22px 10px; border: 0; font-size: 11px; color: #8a7e72; gap: 14px; }
+
+/* 访客使用完整落地页；确认登录后才显示书房侧栏。 */
+.site-shell:has(> .public-header) { display: block; padding: 0 18px; }
+.public-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 23px 28px; }
+.public-header .logo { font-size: 25px; color: #7d4e22; }
+.public-header .button { min-height: 42px; }
+.site-shell:has(> .public-header) > main { min-height: calc(100dvh - 250px); }
+@media (max-width: 760px) {
+  .site-shell:has(> .public-header) { padding: 0 10px; }
+  .public-header { padding: 17px 10px; gap: 12px; }
+  .public-header .logo { font-size: 24px; }
+  .public-header .button { min-height: 40px; padding: 0 14px; }
+}
+
 .eyebrow { color: #9d7953; font-size: 10px; letter-spacing: .18em; font-weight: 550; }
 .button { border-radius: 10px; font-weight: 500; gap: 10px; }
 .button-primary { border: 1px solid #7b532e; background: linear-gradient(#a47b52, #896039); box-shadow: inset 0 1px 0 #c3a17d, 0 4px 7px #6643261c; }

@@ -20,6 +20,16 @@ export function SiteHeader({ nav = [], user, ready = true }: { nav?: NavItem[]; 
   }, [pathname]);
   const items = nav.length ? nav : [{ href: user ? "/create" : "/login?next=%2Fcreate", label: "开始学习" }];
 
+  // 登录确认前也使用访客页头，避免侧栏先闪现再消失。
+  if (!ready || !user) {
+    return (
+      <header className="public-header">
+        <Link href="/" className="logo"><span className="brand-mark brand-mark-small"><BookOpen size={19} strokeWidth={1.8} /></span><span>悦读</span></Link>
+        <Link href="/login" className="button button-light button-small">登录 <ArrowRight size={15} /></Link>
+      </header>
+    );
+  }
+
   return (
     <header className="site-header">
       <div className="header-inner">
