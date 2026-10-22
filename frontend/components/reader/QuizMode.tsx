@@ -166,7 +166,7 @@ export function QuizMode({ chapter, label, answered, result, onAnswer, onClose, 
                       <p className="qm-evidence"><span>原文依据</span>「{reveal.evidence}」</p>
                     )}
                     {!reveal.correct && (
-                      <button type="button" className="qm-link" onClick={() => onLookBack(reveal)}><BookOpenText size={15} />回看原文</button>
+                      <button type="button" className="qm-link" onClick={() => onLookBack(reveal)}><BookOpenText size={15} />回看原文{reveal.source_paragraph ? ` · 第 ${reveal.source_paragraph} 段` : ""}</button>
                     )}
                   </div>
                   <button type="button" className="qm-cta" onClick={next} autoFocus>

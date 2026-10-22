@@ -5,11 +5,18 @@ export type Paragraph = { no: number | null; lines: string[] };
 const MARKER = /^\s*第\s*(\d+)\s*段\s*[:：]?\s*$/;
 const AI_PREFIX = /^\s*（AI 生成内容）\s*/;
 
-/** 按后端写入的「第N段」标记切分正文；没有标记的旧内容整体作为一段。 */
+/** 按「第N段」标记切分正文；没有标记时按行分段（与后端定位编号一致）。 */
 export function parseChapter(content: string): Paragraph[] {
+  const body = content.replace(AI_PREFIX, "");
+  const lines = body.split("\n").map((line) => line.trim()).filter(Boolean);
+  // 模型通常不写「第N段」标记。此时若整章并成一段，「回看第 N 段」就只能跳回开头，
+  // 所以按行切段：既和后端按行定位的编号一致，渲染出来也仍是「一行一段」。
+  if (!lines.some((line) => MARKER.test(line))) {
+    return lines.map((line, index) => ({ no: index + 1, lines: [line] }));
+  }
   const result: Paragraph[] = [];
   let current: Paragraph | null = null;
-  for (const raw of content.replace(AI_PREFIX, "").split("\n")) {
+  for (const raw of body.split("\n")) {
     const marker = raw.match(MARKER);
     if (marker) {
       current = { no: Number(marker[1]), lines: [] };
@@ -98,6 +105,32 @@ export function findQuoteParagraph(paragraphs: Paragraph[], quote: string): numb
   const target = normalizeText(quote ?? "");
   if (target.length < 8) return -1;
   return paragraphs.findIndex((paragraph) => normalizeText(paragraph.lines.join("")).includes(target));
+}
+
+const STRIP_CHAR = /[\s\u3000，。、；：！？…—－·“”‘’（）《》〈〉「」『』,.;:!?()[\]<>/\\|*#"'"]/;
+
+/** 把一行原文按引用句切段，命中部分标 hit，供界面把答案出处直接高亮出来。 */
+export function highlightSegments(line: string, quote: string): { text: string; hit: boolean }[] {
+  const target = normalizeText(quote ?? "");
+  if (target.length < 8) return [{ text: line, hit: false }];
+  // 归一化时记住每个字符在原串里的位置，才能把高亮套回原文
+  let normalized = "";
+  const positions: number[] = [];
+  for (let i = 0; i < line.length; i += 1) {
+    const char = line[i];
+    if (STRIP_CHAR.test(char)) continue;
+    normalized += char.toLowerCase();
+    positions.push(i);
+  }
+  const at = normalized.indexOf(target);
+  if (at < 0) return [{ text: line, hit: false }];
+  const start = positions[at];
+  const end = positions[at + target.length - 1] + 1;
+  const segments: { text: string; hit: boolean }[] = [];
+  if (start > 0) segments.push({ text: line.slice(0, start), hit: false });
+  segments.push({ text: line.slice(start, end), hit: true });
+  if (end < line.length) segments.push({ text: line.slice(end), hit: false });
+  return segments;
 }
 
 /** 返回正文里第一次讲到这些关键词的段落序号；找不到返回 -1。 */

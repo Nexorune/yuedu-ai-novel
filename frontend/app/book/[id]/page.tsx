@@ -6,7 +6,7 @@ import { useParams, useSearchParams } from "next/navigation";
 import { ALargeSmall, ArrowLeft, ArrowRight, BookOpen, CircleAlert, CircleCheck, Flag, Images, List, RotateCcw, Sparkles, Swords, X } from "lucide-react";
 import { api, AnswerResult, AnswerReveal, AppError, Book, Chapter, errorMessage, Progress, Recap, Task } from "@/lib/api";
 import { ActiveTask, clearTask, loadTask, saveTask, taskState } from "@/lib/task";
-import { chapterTitle, countChars, findParagraph, findQuoteParagraph, knowledgeTerms, parseChapter, readingMinutes } from "@/lib/chapter";
+import { chapterTitle, countChars, findParagraph, findQuoteParagraph, highlightSegments, knowledgeTerms, parseChapter, readingMinutes } from "@/lib/chapter";
 import { loadPosition, loadReadingSize, loadReadingTheme, READING_SIZES, ReadingSize, ReadingTheme, saveLastBook, savePosition, saveReadingSize, saveReadingTheme, stepReadingSize } from "@/lib/prefs";
 import { KnowledgeCards } from "@/components/reader/KnowledgeCards";
 import { QuizMode } from "@/components/reader/QuizMode";
@@ -53,8 +53,11 @@ export default function ReadingPage() {
   const [barsHidden, setBarsHidden] = useState(false);
   const [scrollProgress, setScrollProgress] = useState(0);
   const [flashPara, setFlashPara] = useState<number | null>(null);
+  const [hitQuote, setHitQuote] = useState<string | null>(null);
+  const [locateNote, setLocateNote] = useState("");
   const [resumed, setResumed] = useState(false);
   const prefetchedChapter = useRef("");
+  const locateTimer = useRef<number | null>(null);
   const autoStarted = useRef(false);
   const levelRef = useRef<HTMLDivElement | null>(null);
   const afterRef = useRef<HTMLElement | null>(null);
@@ -398,24 +401,39 @@ export default function ReadingPage() {
     return feedback;
   }, [bookId, chapter]);
 
+  function showLocateNote(text: string) {
+    setLocateNote(text);
+    if (locateTimer.current) window.clearTimeout(locateTimer.current);
+    locateTimer.current = window.setTimeout(() => setLocateNote(""), 6000);
+  }
+
   function lookBack(reveal: AnswerReveal) {
-    // 优先用题目交出的原句逐字定位（后端已校验），其次用段号，最后才靠关键词猜
-    let target = reveal.evidence ? findQuoteParagraph(paragraphs, reveal.evidence) : -1;
-    if (target < 0 && reveal.source_paragraph) target = paragraphs.findIndex((paragraph) => paragraph.no === reveal.source_paragraph);
-    if (target < 0 && reveal.knowledge) target = findParagraph(paragraphs, knowledgeTerms(reveal.knowledge));
-    const index = Math.max(0, target);
     setQuizOpen(false);
     setReturnToQuiz(true);
+    // 优先用题目交出的原句逐字定位（后端已校验），其次用真实段号；都定位不到时不要假装跳成功
+    const byQuote = reveal.evidence ? findQuoteParagraph(paragraphs, reveal.evidence) : -1;
+    const byNumber = reveal.source_paragraph ? paragraphs.findIndex((paragraph) => paragraph.no === reveal.source_paragraph) : -1;
+    const target = byQuote >= 0 ? byQuote : byNumber;
+    if (target < 0) {
+      setHitQuote(null);
+      showLocateNote("这一题没能在原文里定位到依据，先看题下的讲解");
+      return;
+    }
+    showLocateNote(byQuote >= 0 ? "已跳到答案出处，黄色标记就是依据原句" : "已跳到这一题所属的段落");
+    setHitQuote(byQuote >= 0 ? reveal.evidence ?? null : null);
     window.setTimeout(() => {
-      const element = document.getElementById("pi-" + index);
+      const element = document.getElementById("pi-" + target);
       if (!element) return;
       window.scrollTo({ top: element.getBoundingClientRect().top + window.scrollY - window.innerHeight / 3, behavior: "smooth" });
-      setFlashPara(index);
-      window.setTimeout(() => setFlashPara(null), 3200);
+      setFlashPara(target);
+      window.setTimeout(() => setFlashPara(null), 6000);
     }, 80);
   }
 
   function openQuiz() {
+    if (locateTimer.current) window.clearTimeout(locateTimer.current);
+    setHitQuote(null);
+    setLocateNote("");
     setReturnToQuiz(false);
     setQuizOpen(true);
   }
@@ -525,7 +543,18 @@ export default function ReadingPage() {
                 <div className="r-body" style={{ fontSize: size.px }} onClick={toggleBars}>
                   {paragraphs.map((paragraph, i) => (
                     <div key={i} id={"pi-" + i} className={"r-para" + (flashPara === i ? " is-flash" : "")}>
-                      {paragraph.lines.map((line, j) => <p key={j}>{line}</p>)}
+                      {paragraph.lines.map((line, j) => {
+                        const segments = hitQuote && flashPara === i ? highlightSegments(line, hitQuote) : null;
+                        return (
+                          <p key={j}>
+                            {segments
+                              ? segments.map((segment, k) => segment.hit
+                                ? <mark key={k} className="r-hit">{segment.text}</mark>
+                                : <span key={k}>{segment.text}</span>)
+                              : line}
+                          </p>
+                        );
+                      })}
                     </div>
                   ))}
                 </div>
@@ -642,6 +671,13 @@ export default function ReadingPage() {
             <button type="button" className="qm-ghost" onClick={() => { setQuizOpen(false); window.scrollTo({ top: 0, behavior: "smooth" }); }}>从头重读</button>
           </>}
         />
+      )}
+
+      {locateNote && !quizOpen && (
+        <div className="r-toast is-soft is-locate" role="status">
+          <span>{locateNote}</span>
+          <button type="button" onClick={() => setLocateNote("")}>知道了</button>
+        </div>
       )}
 
       {returnToQuiz && !quizOpen && chapter && !finishedChapter && (

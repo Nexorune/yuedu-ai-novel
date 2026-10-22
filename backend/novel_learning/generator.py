@@ -287,7 +287,7 @@ def _generate_learning_questions(topic: str, knowledge_points: list[dict],
     problems: list[str] = []
     best: list[dict] | None = None
     best_problems: list[str] = []
-    best_grounded = -1
+    best_score = (-1, -1)
     for _attempt in range(config.REWRITE_LIMIT + 1):
         try:
             data = llm.call_json(system, user, max_tokens=config.MAX_TOKENS_QUESTIONS,
@@ -306,13 +306,16 @@ def _generate_learning_questions(topic: str, knowledge_points: list[dict],
             continue
         problems = _check_grounding(content, qs)
         if not problems:
+            problems = _check_answerable(content, qs)
+        if not problems:
             relevant, issue = _review_learning_questions(
                 topic, knowledge_points, qs, character_names, content)
             if not relevant:
                 problems.append(issue or "测验与本章正文对不上")
         grounded = sum(1 for q in qs if q.get("grounded"))
-        if grounded > best_grounded:
-            best, best_problems, best_grounded = qs, list(problems), grounded
+        answerable = sum(1 for q in qs if q.get("answerable") is True)
+        if (grounded, answerable) > best_score:
+            best, best_problems, best_score = qs, list(problems), (grounded, answerable)
         if not problems:
             break
         LOG.warning("出题不合格（第 %d 次）：%s", _attempt + 1, problems)
@@ -321,9 +324,11 @@ def _generate_learning_questions(topic: str, knowledge_points: list[dict],
         if best is None:
             raise GenerationError(f"出题失败：{problems}")
         # 结构没问题、只是这次没达标：保住已有结果如实交付，不卡住用户
-        LOG.warning("重出未达标，按已有结果交付（接地 %d/%d）：%s",
-                    best_grounded, len(best), best_problems)
+        LOG.warning("重出未达标，按已有结果交付（接地 %d/%d，可答 %d/%d）：%s",
+                    best_score[0], len(best), best_score[1], len(best), best_problems)
         qs = best
+    else:
+        LOG.info("出题达标：接地 %d/%d，可答 %d/%d", best_score[0], len(qs), best_score[1], len(qs))
     shuffle_options(qs)
     return qs
 
@@ -463,6 +468,65 @@ def _check_grounding(content: str, questions: list[dict]) -> list[str]:
         else:
             question["grounded"] = True
             question["source_paragraph"] = paragraph
+    return problems
+
+
+def _check_answerable(content: str, questions: list[dict]) -> list[str]:
+    """盲读校验：只给依据所在的那一段，判断能否唯一确定正确选项。
+
+    接地只证明「这句话在正文里」，证明不了「这句话能推出这个答案」。
+    「他脸色白了一瞬」推不出「他意识到对方掌握了更深层的方法」，
+    这类过度推断必须在这里拦下来，否则读原文也答不出。
+    """
+    paragraphs = _paragraphs(content)
+    items = []
+    for number, question in enumerate(questions, 1):
+        paragraph_no = question.get("source_paragraph")
+        premise = ""
+        if isinstance(paragraph_no, int) and 1 <= paragraph_no <= len(paragraphs):
+            premise = paragraphs[paragraph_no - 1]
+        items.append({
+            "index": number,
+            "question": question.get("question", ""),
+            "options": question.get("options", []),
+            "answer": question.get("answer"),
+            "evidence": question.get("evidence", ""),
+            "premise": premise,
+        })
+    system, user = prompts.answerable_review_prompt(items)
+    try:
+        result = llm.call_json(system, user, max_tokens=config.MAX_TOKENS_REVIEW,
+                               temperature=0.0, model=config.QUESTIONS_MODEL_ID)
+    except (RuntimeError, ValueError) as exc:
+        # 校验本身失败不拦用户：按「未判定」放行，并留日志便于发现
+        LOG.warning("可答性校验调用失败，本轮不拦：%s", exc)
+        return []
+    verdicts = result.get("results")
+    if not isinstance(verdicts, list):
+        LOG.warning("可答性校验返回格式不对：%s", str(result)[:120])
+        return []
+    judged: dict[int, dict] = {}
+    for item in verdicts:
+        if not isinstance(item, dict):
+            continue
+        try:
+            judged[int(item.get("index"))] = item
+        except (TypeError, ValueError):
+            continue
+    problems: list[str] = []
+    for number, question in enumerate(questions, 1):
+        verdict = judged.get(number)
+        if verdict is None:
+            question["answerable"] = None      # 没判定：不当作不合格，避免误杀
+            continue
+        ok = verdict.get("answerable") is True
+        question["answerable"] = ok
+        if not ok:
+            reason = str(verdict.get("reason") or "仅凭原文这一段无法确定答案").strip()[:40]
+            label = str(question.get("question") or "")[:12]
+            problems.append(
+                f"第{number}题「{label}」答案推不出来（{reason}）：请改成原文明确写出答案的题，"
+                f"evidence 用直接写着答案的那句")
     return problems
 
 

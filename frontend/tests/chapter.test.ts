@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { chapterTitle, countChars, findQuoteParagraph, optionLabels, parseChapter, parseEnding, parseHint, readingMinutes } from "../lib/chapter";
+import { chapterTitle, countChars, findQuoteParagraph, highlightSegments, optionLabels, parseChapter, parseEnding, parseHint, readingMinutes } from "../lib/chapter";
 import { loadLastBook, loadReadingSize, nextReadingSize, saveLastBook, saveReadingSize } from "../lib/prefs";
 
 describe("chapter display parsing", () => {
@@ -13,8 +13,14 @@ describe("chapter display parsing", () => {
     ]);
   });
 
-  it("keeps unmarked legacy content as one unnumbered paragraph", () => {
-    expect(parseChapter("第一行\n\n第二行")).toEqual([{ no: null, lines: ["第一行", "第二行"] }]);
+  it("splits unmarked content by line so paragraph numbers still point at the right place", () => {
+    // 模型通常不写「第N段」标记；若整章并成一段，「回看第 N 段」就只能跳回开头
+    expect(parseChapter("第一行\n\n第二行")).toEqual([
+      { no: 1, lines: ["第一行"] },
+      { no: 2, lines: ["第二行"] },
+    ]);
+    const paragraphs = parseChapter("开头。\n复利是利息也生利息，时间越长差距越大。\n结尾。");
+    expect(findQuoteParagraph(paragraphs, "复利是利息也生利息")).toBe(1);
   });
 
   it("drops the chapter number prefix from titles", () => {
@@ -80,6 +86,15 @@ describe("knowledge cards", () => {
     expect(findQuoteParagraph(paragraphs, "复利是把利息也当本金")).toBe(-1);
     // 太短的引用不足以定位，避免误落到别的段落
     expect(findQuoteParagraph(paragraphs, "复利")).toBe(-1);
+  });
+
+  it("highlights only the quoted sentence inside a longer line", () => {
+    const line = "他停了一下，复利是利息也生利息，时间越长差距越大。";
+    const segments = highlightSegments(line, "复利是利息也生利息，时间越长差距越大");
+    expect(segments.map((segment) => segment.hit)).toEqual([false, true, false]);
+    expect(segments[1].text).toContain("复利是利息也生利息");
+    expect(segments.map((segment) => segment.text).join("")).toBe(line);
+    expect(highlightSegments("这一行无关", "复利是利息也生利息")).toEqual([{ text: "这一行无关", hit: false }]);
   });
 
   it("remembers reading theme and position per book", async () => {

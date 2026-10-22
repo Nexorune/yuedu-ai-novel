@@ -101,6 +101,8 @@ def test_generation_rewrites_until_questions_are_grounded(book_factory, monkeypa
             ]}
 
     def fake_model(_system, user, **_kwargs):
+        if "可答性审查员" in user:
+            return {"results": [{"index": i, "answerable": True, "reason": ""} for i in range(1, 6)]}
         if "阅读测验题" in user:
             calls["questions"] += 1
             quote = UNGROUNDED_QUOTE if calls["questions"] == 1 else GOOD_QUOTE
@@ -123,6 +125,74 @@ def test_generation_rewrites_until_questions_are_grounded(book_factory, monkeypa
     assert db.get_chapter(bid, 1)["questions"] == chapter["questions"]
 
 
+# ---------------------------------------------------------------------------
+# 可答性校验：光「这句话在正文里」不够，还得「这句能推出这个答案」
+# ---------------------------------------------------------------------------
+
+
+def test_answerable_rejects_over_inference(monkeypatch):
+    """原文只写「脸色白了」，选项说「他意识到更深层的方法」——这类必须判不合格。"""
+    questions = [_question(GOOD_QUOTE) for _ in range(5)]
+    generator._check_grounding(CONTENT, questions)
+    captured: dict = {}
+
+    def fake_json(_system, user, **_kwargs):
+        captured["user"] = user
+        return {"results": [{"index": i, "answerable": i != 2, "reason": "" if i != 2 else "原文只写动作，未写他在想什么"}
+                            for i in range(1, 6)]}
+
+    monkeypatch.setattr(generator.llm, "call_json", fake_json)
+    problems = generator._check_answerable(CONTENT, questions)
+    assert len(problems) == 1 and "第2题" in problems[0]
+    assert questions[1]["answerable"] is False
+    assert questions[0]["answerable"] is True
+    # 校验只给依据所在的那一段，不把全文丢给模型（否则又会用后文给自己圆场）
+    assert "单利只按最初本金算利息。" in captured["user"]
+
+
+def test_answerable_does_not_block_when_checker_fails(monkeypatch):
+    """校验本身挂了不能把用户卡住：按未判定放行。"""
+    questions = [_question(GOOD_QUOTE) for _ in range(5)]
+    generator._check_grounding(CONTENT, questions)
+
+    def broken(*_args, **_kwargs):
+        raise ValueError("JSON 不完整")
+
+    monkeypatch.setattr(generator.llm, "call_json", broken)
+    assert generator._check_answerable(CONTENT, questions) == []
+    assert all(q.get("answerable") is None for q in questions)
+
+
+def test_generation_rewrites_when_answer_is_not_derivable(book_factory, chapter_factory, monkeypatch):
+    """答案推不出来时重出；重出仍不过就如实降级交付，标 answerable=False。"""
+    bid = book_factory(topic="数学")
+    chapter = chapter_factory(bid)
+    chapter["knowledge_points"] = [{"role": "core", "point": "四则运算", "paragraph": 1}]
+    asked = 0
+
+    def fake_model(_system, user, **_kwargs):
+        nonlocal asked
+        if "可答性审查员" in user:
+            return {"results": [{"index": i, "answerable": False, "reason": "原文没说原因"}
+                                for i in range(1, 6)]}
+        asked += 1
+        return {"questions": [{"type": "memory", "question": "老周为什么走四十分钟？",
+                              "options": ["因为省钱", "因为锻炼", "因为堵车", "因为喜欢"],
+                              "answer": 0, "evidence": "第1段内容。第1段内容。"} for _ in range(5)]}
+
+    monkeypatch.setattr(generator.llm, "call_json", fake_model)
+    monkeypatch.setattr(generator, "_review_learning_questions", lambda *_args, **_kwargs: (True, ""))
+    questions = generator.regenerate_questions(chapter, "适中")
+    assert asked == 3, "可答性不过要重出到次数用尽"
+    assert len(questions) == 5
+    assert all(q["answerable"] is False for q in questions)
+
+
+# ---------------------------------------------------------------------------
+# 合并后重试与降级
+# ---------------------------------------------------------------------------
+
+
 def test_retry_crash_keeps_previously_usable_questions(book_factory, chapter_factory,
                                                        monkeypatch):
     """第一次已拿到结构完整的题，第二次重试崩了（长度上限等），不能把好结果一起丢掉。"""
@@ -131,7 +201,9 @@ def test_retry_crash_keeps_previously_usable_questions(book_factory, chapter_fac
     chapter["knowledge_points"] = [{"role": "core", "point": "四则运算", "paragraph": 1}]
     calls = 0
 
-    def fake_model(_system, _user, **_kwargs):
+    def fake_model(_system, user, **_kwargs):
+        if "可答性审查员" in user:
+            return {"results": [{"index": i, "answerable": True, "reason": ""} for i in range(1, 6)]}
         nonlocal calls
         calls += 1
         if calls == 1:
@@ -181,7 +253,9 @@ def test_regenerate_recovers_from_invalid_json_and_letter_answer(book_factory, c
     chapter["knowledge_points"] = [{"role": "core", "point": "四则运算", "paragraph": 1}]
     calls = 0
 
-    def fake_model(_system, _user, **_kwargs):
+    def fake_model(_system, user, **_kwargs):
+        if "可答性审查员" in user:
+            return {"results": [{"index": i, "answerable": True, "reason": ""} for i in range(1, 6)]}
         nonlocal calls
         calls += 1
         if calls == 1:
