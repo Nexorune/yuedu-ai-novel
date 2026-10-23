@@ -56,6 +56,8 @@ export type Chapter = {
   knowledge_points?: KnowledgePoint[];
 };
 
+export type KnowledgeChapter = { chapter_no: number; title: string; is_ending: boolean; knowledge_points: KnowledgePoint[] };
+
 export type Recap = {
   mainline: string;
   characters: { name: string; identity: string }[];
@@ -87,6 +89,13 @@ export type AnswerFeedback = AnswerReveal & { answered: number; total: number; r
 export type Ending = { style: string; desc: string; unlocked: boolean; chapter_no: number | null };
 
 export type User = { id: number; nickname: string; phone_masked: string; created_at: string };
+
+export type Mistake = {
+  id: number; book_id: number; book_title: string; topic: string; chapter_no: number; chapter_title: string;
+  question: string; options: string[]; answer: number; choice: number; type: string;
+  explanation: string; knowledge: string; source_paragraph: number | null; source_excerpt: string;
+  mastered: boolean; created_at: string;
+};
 
 export type UserStats = { books: number; chapters_passed: number; knowledge_points: number };
 
@@ -138,6 +147,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  async mistakes(): Promise<{ mistakes: Mistake[] }> {
+    const data = await request<{ mistakes: unknown }>("/mistakes");
+    if (!Array.isArray(data.mistakes)) throw new AppError("BAD_RESPONSE", "错题数据格式有误，请重新加载。", true);
+    return { mistakes: data.mistakes as Mistake[] };
+  },
+  mistake(id: number) { return request<{ mistake: Mistake }>(`/mistakes/${id}`); },
+  updateMistake(id: number, mastered: boolean) {
+    return request<{ id: number; mastered: boolean }>(`/mistakes/${id}`, { method: "PATCH", body: JSON.stringify({ mastered }) });
+  },
   me() {
     return request<{ user: User | null; demo_autofill?: boolean }>("/auth/me");
   },
@@ -184,6 +202,9 @@ export const api = {
   },
   answer(id: number, number: number, index: number, choice: number) {
     return request<AnswerFeedback>(`/books/${id}/chapters/${number}/answer`, { method: "POST", body: JSON.stringify({ index, choice }) });
+  },
+  knowledge(id: number) {
+    return request<{ chapters: KnowledgeChapter[] }>(`/books/${id}/knowledge`);
   },
   recap(id: number) {
     return request<Recap>(`/books/${id}/recap`);

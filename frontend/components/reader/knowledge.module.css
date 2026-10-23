@@ -1,0 +1,37 @@
+.panel { margin:30px 0; padding:clamp(20px,4vw,32px); border:1px solid var(--r-line); border-radius:16px; background:var(--r-surface); box-shadow:0 4px 0 -1px var(--r-bg),0 5px 0 -1px var(--r-line); scroll-margin-top:80px; text-align:left; }
+.head { display:flex; align-items:center; gap:12px; }
+.icon { display:grid; place-items:center; width:42px; height:42px; flex-shrink:0; background:var(--r-accent-pale); color:var(--r-accent-dark); border-radius:12px; }
+.eyebrow { font-size:11px; color:var(--r-muted); margin-bottom:4px; letter-spacing:.08em; }
+.head h2 { color:var(--r-strong); font:500 24px/1.5 var(--serif); }
+.count { margin-left:auto; font-size:11px; color:var(--r-muted); }
+.tabs { display:flex; gap:20px; margin-top:22px; border-bottom:1px solid var(--r-line); }
+.tabs button { padding:10px 0; min-height:44px; font-size:13px; color:var(--r-muted); border-bottom:2px solid transparent; }
+.tabs button[aria-pressed="true"] { border-color:var(--r-accent); color:var(--r-accent-dark); font-weight:600; }
+.note { margin:14px 0 20px; font-size:12px; line-height:1.8; color:var(--r-muted); }
+.points { list-style:none; margin:0; padding:0; }
+.points > li { display:flex; gap:17px; padding:20px 0; border-top:1px solid var(--r-line); }
+.points > li:first-child { border-top:0; padding-top:0; }
+.points > li:last-child { padding-bottom:0; }
+.points > li > div { min-width:0; }
+.number { font:italic 24px/1.3 Georgia,serif; color:var(--r-accent); flex:0 0 30px; padding-top:4px; }
+.kind { font-size:10px; color:var(--r-accent-dark); letter-spacing:.1em; }
+.points h3 { margin:4px 0 8px; color:var(--r-strong); font:500 18px/1.6 var(--serif); overflow-wrap:anywhere; }
+.points p { color:var(--r-muted); font-size:14px; line-height:1.95; overflow-wrap:anywhere; }
+.search { display:flex; gap:8px; align-items:center; padding:0 12px; margin-bottom:16px; border:1px solid var(--r-line); border-radius:8px; background:var(--r-bg); color:var(--r-muted); }
+.search svg { flex-shrink:0; }.search input { width:100%; min-width:0; min-height:44px; border:0; background:transparent; color:var(--r-text); font-size:13px; }
+.directory { border-top:1px solid var(--r-line); }
+.directory details { border-bottom:1px solid var(--r-line); }
+.directory summary { display:flex; align-items:center; gap:10px; padding:16px 0; min-height:52px; color:var(--r-strong); font-size:13px; cursor:pointer; list-style:none; }
+.directory summary::-webkit-details-marker { display:none; }.directory summary svg { flex-shrink:0; color:var(--r-accent); }.directory summary span { flex:1; overflow-wrap:anywhere; }.directory summary small { white-space:nowrap; color:var(--r-muted); font-size:11px; }.directory details[open] summary > svg:last-child { transform:rotate(180deg); }
+.directory .points { padding:10px 16px 20px; }.read { display:flex; align-items:center; justify-content:flex-end; gap:5px; min-height:44px; padding-bottom:10px; color:var(--r-accent-dark); font-size:12px; }
+.empty { padding:22px 0; font-size:13px; line-height:1.8; color:var(--r-muted); }.empty button { display:block; min-height:44px; color:var(--r-accent-dark); text-decoration:underline; }
+@media(max-width:500px) { .head { flex-wrap:wrap; }.count { margin-left:54px; margin-top:-8px; }.head h2 { font-size:22px; }.points > li { gap:10px; }.number { flex-basis:25px; font-size:21px; }.points h3 { font-size:17px; }.directory .points { padding-left:4px; padding-right:4px; } }
+
+/* 左侧抽屉内使用紧凑清单，不再叠加一层纸卡。 */
+.compact { margin:0; padding:0; border:0; border-radius:0; background:transparent; box-shadow:none; }
+.compact .icon,.compact .eyebrow { display:none; }
+.compact .head { gap:8px; }.compact .head h2 { font-size:21px; }.compact .count { margin:0 0 0 auto; font-size:10px; }
+.compact .tabs { gap:18px; margin-top:16px; }.compact .tabs button { font-size:12px; }.compact .note { font-size:11px; margin-bottom:18px; }
+.compact .points > li { gap:12px; padding-block:18px; }.compact .points > li:first-child { padding-top:0; }.compact .number { flex-basis:23px; font-size:21px; }
+.compact .points h3 { font-size:17px; }.compact .points p { font-size:13px; line-height:1.9; }
+.compact .directory .points { padding-inline:0; }.compact .directory summary { font-size:12px; gap:7px; }

@@ -84,6 +84,10 @@ class AnswerOne(BaseModel):
     choice: int
 
 
+class MistakeUpdate(BaseModel):
+    mastered: bool = Field(strict=True)
+
+
 class RegenRequest(BaseModel):
     difficulty_hint: str = "适中难度，与原文一致"
 
@@ -130,9 +134,8 @@ def public_chapter(chapter: dict) -> dict:
     data = {"chapter_no": chapter["chapter_no"], "title": chapter["title"],
             "content": chapter["content"], "questions": questions,
             "status": chapter["status"], "is_ending": bool(chapter.get("is_ending"))}
-    # 本章知识卡片：通关（或大结局）后才给，作为本章的收获
-    if chapter["status"] == "unlocked" or chapter.get("is_ending"):
-        data["knowledge_points"] = public_knowledge(chapter)
+    # 知识清单是阅读材料，当前可读章节在闯关前后都展示；题目答案仍按作答揭晓。
+    data["knowledge_points"] = public_knowledge(chapter)
     return data
 
 
@@ -289,6 +292,27 @@ def public_user(user: dict) -> dict:
     phone = user["phone"]
     return {"id": user["id"], "nickname": user["nickname"],
             "phone_masked": phone[:3] + "****" + phone[-4:], "created_at": user["created_at"]}
+
+
+
+@app.get("/api/mistakes")
+def list_mistakes(request: Request):
+    return {"mistakes": db.list_mistakes(str(request.state.user["id"]))}
+
+
+@app.get("/api/mistakes/{mistake_id}")
+def get_mistake(mistake_id: int, request: Request):
+    item = db.get_mistake(str(request.state.user["id"]), mistake_id)
+    if not item:
+        return err("HTTP_404", "这道错题不存在", 404)
+    return {"mistake": item}
+
+
+@app.patch("/api/mistakes/{mistake_id}")
+def update_mistake(mistake_id: int, payload: MistakeUpdate, request: Request):
+    if not db.set_mistake_mastered(str(request.state.user["id"]), mistake_id, payload.mastered):
+        return err("HTTP_404", "这道错题不存在", 404)
+    return {"id": mistake_id, "mastered": payload.mastered}
 
 
 @app.post("/api/auth/code")
@@ -480,6 +504,23 @@ def _is_readable_ending(book_id: int, chapter: dict) -> bool:
     """已完结的书，收集到的每个结局都可以读（重走的结局章节号会排在后面）。"""
     book = db.get_book(book_id)
     return bool(chapter.get("is_ending")) and book is not None and book["status"] == "completed"
+
+
+@app.get("/api/books/{book_id}/knowledge")
+def book_knowledge(book_id: int):
+    """按章节汇总当前可读知识；不暴露预生成、尚未解锁章节的内容。"""
+    book = db.get_book(book_id)
+    if not book:
+        _not_found(f"书 {book_id} 不存在")
+    readable_through = db.get_progress(book_id)["current_chapter"] + 1
+    chapters = [
+        {"chapter_no": chapter["chapter_no"], "title": chapter["title"],
+         "is_ending": bool(chapter.get("is_ending")), "knowledge_points": public_knowledge(chapter)}
+        for chapter in db.list_chapters(book_id)
+        if chapter["chapter_no"] <= readable_through
+        or (chapter.get("is_ending") and book["status"] == "completed")
+    ]
+    return {"chapters": chapters}
 
 
 @app.get("/api/books/{book_id}/chapters/{chapter_no}")

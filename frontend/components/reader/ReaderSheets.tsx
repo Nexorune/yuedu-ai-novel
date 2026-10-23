@@ -2,10 +2,12 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Check, Flag, Images, LockKeyhole, Minus, Plus, X } from "lucide-react";
-import type { Book } from "@/lib/api";
+import { BookOpen, Check, Flag, Images, Lightbulb, LockKeyhole, Minus, Plus, X } from "lucide-react";
+import type { Book, Chapter } from "@/lib/api";
 import { READING_SIZES, READING_THEMES, ReadingSize, ReadingTheme } from "@/lib/prefs";
 import { useDialog } from "./useDialog";
+import { ChapterKnowledge } from "./ChapterKnowledge";
+import styles from "./reader-drawer.module.css";
 
 type TocProps = {
   open: boolean;
@@ -19,10 +21,13 @@ type TocProps = {
   onPick: (no: number) => void;
   canFinalize: boolean;
   onFinalize: () => void;
+  chapter: Chapter | null;
+  view: "chapters" | "knowledge";
+  onView: (view: "chapters" | "knowledge") => void;
 };
 
 /** 目录抽屉：书的进度、章节列表、结局画廊、就此完结（二次确认）。 */
-export function TocDrawer({ open, onClose, book, title, current, chapterNo, isEnding, disabled, onPick, canFinalize, onFinalize }: TocProps) {
+export function TocDrawer({ open, onClose, book, title, current, chapterNo, isEnding, disabled, onPick, canFinalize, onFinalize, chapter, view, onView }: TocProps) {
   const ref = useDialog<HTMLDivElement>(open, onClose, true);
   const [confirming, setConfirming] = useState(false);
   if (!open) return null;
@@ -30,18 +35,23 @@ export function TocDrawer({ open, onClose, book, title, current, chapterNo, isEn
   const planned = book.planned_chapters;
   return (
     <div className="sheet-layer" onClick={onClose}>
-      <div className="toc" ref={ref} role="dialog" aria-modal="true" aria-label="目录" onClick={(event) => event.stopPropagation()}>
+      <div id="reader-library-panel" className={`toc ${styles.drawer}`} ref={ref} role="dialog" aria-modal="true" aria-label="目录与知识点" onClick={(event) => event.stopPropagation()}>
         <div className="toc-head">
           <div>
             <p className="toc-title">{title}</p>
             <p className="toc-sub">{book.genre} · 学习「{book.topic}」</p>
           </div>
-          <button type="button" className="icon-button" onClick={onClose} aria-label="关闭目录"><X size={20} /></button>
+          <button type="button" className="icon-button" onClick={onClose} aria-label="关闭侧栏"><X size={20} /></button>
         </div>
         <div className="toc-progress">
           <div className="toc-track"><span style={{ width: (book.status === "completed" ? 100 : Math.min(100, (current / Math.max(1, planned)) * 100)) + "%" }} /></div>
           <span>{book.status === "completed" ? "已完结" : `已通关 ${current} / ${planned} 章`}</span>
         </div>
+        <div className={styles.switcher} role="group" aria-label="侧栏内容">
+          <button type="button" aria-pressed={view === "chapters"} onClick={() => onView("chapters")}><BookOpen size={16} />章节目录</button>
+          <button type="button" aria-pressed={view === "knowledge"} onClick={() => onView("knowledge")}><Lightbulb size={16} />知识点</button>
+        </div>
+        {view === "knowledge" ? <div className={styles.knowledgeBody}>{chapter ? <ChapterKnowledge key={`${book.id}:${chapter.chapter_no}`} bookId={book.id} chapter={chapter} compact onNavigate={onClose} /> : <p className="toc-empty">章节生成后，就能在这里查看知识点。</p>}</div> : <>
         <ol className="toc-list">
           {Array.from({ length: count }, (_, i) => i + 1).map((no) => {
             const here = no === chapterNo;
@@ -72,6 +82,7 @@ export function TocDrawer({ open, onClose, book, title, current, chapterNo, isEn
             </div>
           )}
         </div>
+        </>}
       </div>
     </div>
   );

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 
-const FOCUSABLE = 'button:not([disabled]), a[href], input:not([disabled]), [tabindex]:not([tabindex="-1"])';
+const FOCUSABLE = 'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
 
 /**
  * 弹层（闯关、目录、阅读设置）的通用行为：打开时把焦点移进来、Tab 不跑出去、Esc 关闭、

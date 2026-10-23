@@ -149,3 +149,9 @@ export const QUESTION_KINDS: Record<string, string> = {
   transfer: "应用",
   locate: "辨析",
 };
+
+/** 优先匹配保存时的原文；正文改动后不拿旧段号误指向另一段。 */
+export function findMistakeParagraph(paragraphs: Paragraph[], source: { source_excerpt: string; source_paragraph: number | null }): number {
+  if (source.source_excerpt) return paragraphs.findIndex((paragraph) => paragraph.lines.join("\n") === source.source_excerpt);
+  return source.source_paragraph === null ? -1 : paragraphs.findIndex((paragraph) => paragraph.no === source.source_paragraph);
+}

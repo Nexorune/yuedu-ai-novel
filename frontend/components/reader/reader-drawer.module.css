@@ -1,0 +1,6 @@
+.drawer { width:min(420px,calc(100vw - 24px)); }
+.switcher { display:flex; gap:8px; padding:12px 20px; border-bottom:1px solid var(--r-line); flex-shrink:0; }
+.switcher button { flex:1; display:flex; align-items:center; justify-content:center; gap:7px; min-height:44px; border-radius:7px; color:var(--r-muted); font-size:13px; }
+.switcher button[aria-pressed="true"] { color:var(--r-accent-dark); background:var(--r-accent-pale); font-weight:600; }
+.knowledgeBody { flex:1; min-height:0; overflow-y:auto; overscroll-behavior:contain; padding:22px 22px max(28px,env(safe-area-inset-bottom)); }
+@media(max-width:500px) { .knowledgeBody { padding:18px; }.switcher { padding-inline:18px; } }
