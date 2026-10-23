@@ -306,7 +306,7 @@ def _generate_learning_questions(topic: str, knowledge_points: list[dict],
             continue
         problems = _check_grounding(content, qs)
         if not problems:
-            problems = _check_answerable(content, qs)
+            problems = _check_answerable(content, qs, knowledge_points)
         if not problems:
             relevant, issue = _review_learning_questions(
                 topic, knowledge_points, qs, character_names, content)
@@ -471,14 +471,20 @@ def _check_grounding(content: str, questions: list[dict]) -> list[str]:
     return problems
 
 
-def _check_answerable(content: str, questions: list[dict]) -> list[str]:
-    """盲读校验：只给依据所在的那一段，判断能否唯一确定正确选项。
+def _check_answerable(content: str, questions: list[dict],
+                     knowledge_points: list[dict] | None = None) -> list[str]:
+    """盲读校验：给依据所在段落 + 本章知识点，判断能否唯一确定正确选项。
 
     接地只证明「这句话在正文里」，证明不了「这句话能推出这个答案」。
     「他脸色白了一瞬」推不出「他意识到对方掌握了更深层的方法」，
     这类过度推断必须在这里拦下来，否则读原文也答不出。
+
+    知识点定义要一起给：考「这段行为体现什么概念」时，概念定义在另一段，
+    只给依据段会把正常的概念应用题误判成「推不出来」。
     """
     paragraphs = _paragraphs(content)
+    lessons = [f"[{kp.get('role')}] {kp.get('point')}" for kp in (knowledge_points or [])
+               if isinstance(kp, dict) and kp.get("point")]
     items = []
     for number, question in enumerate(questions, 1):
         paragraph_no = question.get("source_paragraph")
@@ -492,6 +498,7 @@ def _check_answerable(content: str, questions: list[dict]) -> list[str]:
             "answer": question.get("answer"),
             "evidence": question.get("evidence", ""),
             "premise": premise,
+            "lessons": lessons,
         })
     system, user = prompts.answerable_review_prompt(items)
     try:

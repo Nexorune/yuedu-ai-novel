@@ -25,7 +25,7 @@ BASE_URL = os.getenv("ANTHROPIC_BASE_URL", "")
 
 # 生成护栏
 MAX_TOKENS_CHAPTER = int(os.getenv("CHAPTER_MAX_TOKENS", "8192"))
-MAX_TOKENS_OUTLINE = int(os.getenv("OUTLINE_MAX_TOKENS", "2048"))
+MAX_TOKENS_OUTLINE = int(os.getenv("OUTLINE_MAX_TOKENS", "6144"))
 MAX_TOKENS_REVIEW = int(os.getenv("REVIEW_MAX_TOKENS", "1024"))
 # 出题要带原句 evidence 与讲解，且部分模型会先推理再输出 JSON，预算给足
 MAX_TOKENS_QUESTIONS = int(os.getenv("QUESTIONS_MAX_TOKENS", "8192"))
