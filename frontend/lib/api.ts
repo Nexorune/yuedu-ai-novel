@@ -157,7 +157,7 @@ export const api = {
     return request<{ id: number; mastered: boolean }>(`/mistakes/${id}`, { method: "PATCH", body: JSON.stringify({ mastered }) });
   },
   me() {
-    return request<{ user: User | null; demo_autofill?: boolean }>("/auth/me");
+    return request<{ user: User | null; demo_autofill?: boolean; demo_phone?: string | null }>("/auth/me");
   },
   sendCode(phone: string, demoAutofill = false) {
     return request<{ sent: boolean; cooldown: number; demo_code?: string }>("/auth/code", { method: "POST", body: JSON.stringify({ phone, demo_autofill: demoAutofill }) });

@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, BookOpen } from "lucide-react";
-import { api, errorMessage } from "@/lib/api";
+import { api, AppError, errorMessage } from "@/lib/api";
 import { safeNext } from "@/lib/account";
 import { clearLoginMemory, loadLoginMemory, saveLoginMemory } from "@/lib/login-memory";
 
@@ -19,6 +19,7 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [hint, setHint] = useState("");
   const [demoMode, setDemoMode] = useState(false);
+  const [demoPhone, setDemoPhone] = useState("");
   const [phoneActivation, setPhoneActivation] = useState(0);
   const edited = useRef(false);
   const currentPhone = useRef("");
@@ -36,9 +37,10 @@ export default function LoginPage() {
       setPhone(saved.phone);
       setAgreed(saved.agreed);
     }
-    api.me().then(({ user, demo_autofill }) => {
+    api.me().then(({ user, demo_autofill, demo_phone }) => {
       if (cancelled) return;
       if (user) return window.location.replace(safeNext(new URLSearchParams(window.location.search).get("next")));
+      setDemoPhone(demo_autofill === true && demo_phone ? demo_phone : "");
       restore(demo_autofill === true);
     }).catch(() => { restore(false); });
     return () => { cancelled = true; };
@@ -136,6 +138,27 @@ export default function LoginPage() {
     }
   }
 
+  // 本机演示：一键进入上次用过的账号，省掉填号、取码、勾协议三步
+  // 优先这台设备上次输入的号（localStorage），其次后端给的书最多的账号
+  const quickPhone = PHONE.test(phone) ? phone : demoPhone;
+
+  async function quickEnter() {
+    if (submitting || !quickPhone) return;
+    setError("");
+    setSubmitting(true);
+    try {
+      const sent = await api.sendCode(quickPhone, true);
+      if (!sent.demo_code || !/^\d{6}$/.test(sent.demo_code)) {
+        throw new AppError("DEMO_DISABLED", "演示登录未开启，请手动输入验证码", false);
+      }
+      await api.login({ phone: quickPhone, code: sent.demo_code, agreed: true });
+      window.location.replace(safeNext(new URLSearchParams(window.location.search).get("next")));
+    } catch (cause) {
+      setError(errorMessage(cause));
+      setSubmitting(false);
+    }
+  }
+
   return (
     <main className="login-wrap">
       <Link href="/" className="logo login-logo"><span className="brand-mark brand-mark-small"><BookOpen size={19} strokeWidth={1.8} /></span><span>悦读</span></Link>
@@ -161,6 +184,17 @@ export default function LoginPage() {
 
         {error && <p className="form-error" role="alert">{error}</p>}
         <button className="button button-primary button-wide" type="submit" disabled={submitting}>{submitting ? "正在登录…" : "登录"} <ArrowRight size={18} /></button>
+
+        {quickPhone && (
+          <div style={{ marginTop: 12 }}>
+            <button className="button button-light button-wide" type="button" disabled={submitting} onClick={() => void quickEnter()}>
+              一键进入 · {quickPhone.slice(0, 3)}****{quickPhone.slice(-4)}
+            </button>
+            <p style={{ margin: "8px 0 0", fontSize: 12, lineHeight: 1.6, color: "var(--muted)" }}>
+              免验证码，直接用该手机号登录；继续即表示同意《用户协议》和《隐私政策》
+            </p>
+          </div>
+        )}
       </form>
       <p className="login-foot">内容由 AI 生成，陪你在故事里学习</p>
     </main>

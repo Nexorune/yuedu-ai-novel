@@ -230,6 +230,23 @@ def delete_session(token_hash: str) -> None:
         conn.execute("DELETE FROM sessions WHERE token_hash=?", (token_hash,))
 
 
+def latest_login_phone() -> str | None:
+    """本机演示「一键进入」要用的手机号：优先回到资料最多的那个账号。
+
+    换 host（127.0.0.1 ↔ localhost）或清过 Cookie 时会话就没了；若此时随便挑一个
+    账号登录，用户会看到空书架或少了几本书。所以按「书多的优先、其次最近登录」
+    挑一个，保证进去就是自己平时用的那份数据。
+    """
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT u.phone, COUNT(b.id) AS n, COALESCE(MAX(s.expires_at), 0) AS last"
+            " FROM users u"
+            " LEFT JOIN books b ON b.user_id = CAST(u.id AS TEXT)"
+            " LEFT JOIN sessions s ON s.user_id = u.id"
+            " GROUP BY u.id ORDER BY n DESC, last DESC LIMIT 1").fetchone()
+        return str(row["phone"]) if row else None
+
+
 def user_stats(user_id: int) -> dict:
     """个人中心的学习统计：读过几本、通关几章、学会几个知识点。"""
     owner = str(user_id)

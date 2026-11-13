@@ -363,8 +363,12 @@ def me(request: Request):
     """未登录时返回 user=null（不算错误），方便页面决定显示「登录」还是头像。"""
     token = request.cookies.get(SESSION_COOKIE, "")
     user = db.get_session_user(_hash_token(token)) if token else None
-    return {"user": public_user(user) if user else None,
-            "demo_autofill": config.DEMO_LOGIN_AUTOFILL}
+    payload = {"user": public_user(user) if user else None,
+               "demo_autofill": config.DEMO_LOGIN_AUTOFILL}
+    # 本机演示：告诉登录页「上次用的是哪个号」，一键进入才不会进到空账号
+    if config.DEMO_LOGIN_AUTOFILL and not user:
+        payload["demo_phone"] = db.latest_login_phone()
+    return payload
 
 
 @app.get("/api/me/stats")
